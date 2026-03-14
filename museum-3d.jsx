@@ -15,6 +15,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const [alignmentProgress, setAlignmentProgress] = useState(0);
   const alignmentTimeRef = useRef(0);
   const wasAlignedRef = useRef(false); // Track previous alignment state
+  const [completionResults, setCompletionResults] = useState(null);
   
   // Update ref when state changes
   useEffect(() => {
@@ -925,14 +926,10 @@ const WanderingMuseum = ({ onComplete }) => {
       };
 
       console.log('Game completed!', results);
-
-      // Call onComplete if provided (for integration), otherwise just log
-      if (onComplete && typeof onComplete === 'function') {
-        onComplete(results);
-      } else {
-        console.log('No onComplete handler provided - standalone mode');
-        alert(`Game Complete!\nMethod: ${gameState.completionMethod}\nOpenness Score: ${Math.round(abstractnessLevel * 100)}%`);
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
       }
+      setCompletionResults(results);
     };
 
     // Player setup
@@ -1583,6 +1580,7 @@ const WanderingMuseum = ({ onComplete }) => {
         
         // Make circles visible and always render
         alignmentCircles.forEach(circle => {
+          circle.mesh.visible = true;
           circle.material.opacity = Math.min(0.8, circle.material.opacity + deltaTime * 2);
           circle.mesh.lookAt(activeCamera.position);
         });
@@ -1645,6 +1643,7 @@ const WanderingMuseum = ({ onComplete }) => {
           
           // Portal appears and grows as you stay aligned
           const progressRatio = Math.min(1, alignmentTimeRef.current / alignmentRequired);
+          portalMesh.visible = true;
           portalMaterial.opacity = progressRatio * 0.9;
           portalLight.intensity = progressRatio * 5;
           portalMesh.scale.setScalar(0.5 + progressRatio * 1.5);
@@ -1686,11 +1685,13 @@ const WanderingMuseum = ({ onComplete }) => {
         // Hide exit zone
         exitZoneMaterial.opacity = Math.max(0, exitZoneMaterial.opacity - deltaTime * 2);
         
-        // Fade out circles when not tripping
+        // Hide circles when not tripping
         alignmentCircles.forEach(circle => {
-          circle.material.opacity = Math.max(0, circle.material.opacity - deltaTime * 2);
+          circle.material.opacity = 0;
+          circle.mesh.visible = false;
         });
-        portalMaterial.opacity = Math.max(0, portalMaterial.opacity - deltaTime * 2);
+        portalMaterial.opacity = 0;
+        portalMesh.visible = false;
         portalLight.intensity = 0;
         setIsAligned(false);
         wasAlignedRef.current = false;
@@ -1832,8 +1833,64 @@ const WanderingMuseum = ({ onComplete }) => {
         </div>
       )}
 
+      {/* Completion summary overlay */}
+      {completionResults && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.92)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 200
+        }}>
+          <div style={{
+            color: 'white',
+            textAlign: 'center',
+            maxWidth: '500px',
+            padding: '40px',
+            fontFamily: 'system-ui, sans-serif'
+          }}>
+            <h2 style={{ fontSize: '2rem', fontWeight: '300', marginBottom: '24px' }}>
+              {completionResults.completionMethod === 'trip' ? 'transcendence achieved'
+                : completionResults.completionMethod === 'sober' ? 'exhibition complete'
+                : 'museum visited'}
+            </h2>
+            <div style={{ opacity: 0.7, lineHeight: '2', fontSize: '15px', marginBottom: '30px' }}>
+              <div>Art pieces examined: {completionResults.uniqueDescriptions} / 6</div>
+              <div>Completion: {completionResults.completionMethod === 'trip' ? 'psychedelic portal'
+                : completionResults.completionMethod === 'sober' ? 'full gallery tour'
+                : 'early departure'}</div>
+              <div>Openness score: {Math.round(completionResults.abstractnessLevel * 100)}%</div>
+            </div>
+            <button
+              onClick={() => {
+                if (onComplete && typeof onComplete === 'function') {
+                  onComplete(completionResults);
+                }
+              }}
+              style={{
+                padding: '14px 40px',
+                background: 'white',
+                color: 'black',
+                border: 'none',
+                fontSize: '1rem',
+                fontWeight: '300',
+                cursor: 'pointer',
+                letterSpacing: '1px'
+              }}
+            >
+              continue
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* UI overlay */}
-      {!instructions && (
+      {!instructions && !completionResults && (
         <>
           <div style={{
             position: 'absolute',
