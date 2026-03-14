@@ -1732,18 +1732,14 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     animate();
 
-    // Finish button handler
-    const finishButton = document.getElementById('finish-museum-btn');
+    // Finish button handler (via custom event from React onClick)
     const finishHandler = () => {
       if (!gameStateRef.current.completionMethod) {
         gameStateRef.current.completionMethod = 'early';
       }
       finishGame();
     };
-
-    if (finishButton) {
-      finishButton.addEventListener('click', finishHandler);
-    }
+    window.addEventListener('museum-finish', finishHandler);
 
     // Cleanup
     return () => {
@@ -1765,9 +1761,7 @@ const WanderingMuseum = ({ onComplete }) => {
         renderer.domElement.removeEventListener('touchend', onTouchEnd);
       }
 
-      if (finishButton) {
-        finishButton.removeEventListener('click', finishHandler);
-      }
+      window.removeEventListener('museum-finish', finishHandler);
 
       if (document.pointerLockElement) {
         document.exitPointerLock();
@@ -1994,25 +1988,34 @@ const WanderingMuseum = ({ onComplete }) => {
           )}
 
           <button
-            id="finish-museum-btn"
+            onClick={() => {
+              if (!gameStateRef.current.completionMethod) {
+                gameStateRef.current.completionMethod = 'early';
+              }
+              // Release pointer lock before finishing
+              if (document.pointerLockElement) {
+                document.exitPointerLock();
+              }
+              // Trigger finishGame via a custom event since finishGame is inside useEffect
+              window.dispatchEvent(new CustomEvent('museum-finish'));
+            }}
             style={{
               position: 'absolute',
               bottom: '30px',
               left: '50%',
               transform: 'translateX(-50%)',
               padding: '12px 32px',
-              background: isTripping ? 'rgba(0, 255, 255, 0.3)' : 'white',
-              color: isTripping ? '#00ffff' : 'black',
-              border: isTripping ? '2px solid #00ffff' : 'none',
+              background: 'white',
+              color: 'black',
+              border: 'none',
               fontSize: '14px',
               fontWeight: '300',
               cursor: 'pointer',
               letterSpacing: '1px',
-              opacity: 0.9,
-              boxShadow: isTripping ? '0 0 20px rgba(0, 255, 255, 0.5)' : 'none'
+              opacity: 0.9
             }}
           >
-            {isTripping ? 'find the exit portal' : 'leave museum'}
+            leave museum
           </button>
 
           {/* Mobile joystick indicator */}

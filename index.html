@@ -80,7 +80,7 @@
         .subtitle {
             text-align: center;
             font-size: 0.6rem;
-            color: #888;
+            color: #bbb;
             margin-bottom: 50px;
             line-height: 1.8;
         }
@@ -191,7 +191,7 @@
         }
 
         .status-locked {
-            color: #555;
+            color: #888;
             background: #1a1a2e;
             border: 1px solid #333;
         }
@@ -211,7 +211,7 @@
             text-align: center;
             margin-top: 60px;
             font-size: 0.45rem;
-            color: #444;
+            color: #777;
             line-height: 2;
         }
 
@@ -233,23 +233,37 @@
 
         .scores-list {
             list-style: none;
+            padding: 0;
+            margin: 0;
         }
 
         .score-row {
-            display: flex;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: 2fr 2fr 2fr 1.5fr 1fr;
             align-items: center;
             padding: 10px 0;
             border-bottom: 1px solid #1a1a2e;
-            font-size: 0.5rem;
+            font-size: 0.8rem;
         }
 
         .score-row:last-child {
             border-bottom: none;
         }
 
+        .score-header {
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+
+        .score-header span {
+            color: #bbb;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+        }
+
         .score-game {
-            color: #aaa;
+            color: #ccc;
         }
 
         .score-value {
@@ -257,14 +271,20 @@
             text-shadow: 0 0 6px rgba(0, 255, 204, 0.3);
         }
 
+        .score-trait {
+            color: #ff9933;
+            font-size: 0.8rem;
+            text-shadow: 0 0 6px rgba(255, 153, 51, 0.3);
+        }
+
         .score-detail {
-            color: #666;
-            font-size: 0.4rem;
+            color: #aaa;
+            font-size: 0.8rem;
         }
 
         .scores-empty {
             text-align: center;
-            color: #444;
+            color: #777;
             font-size: 0.45rem;
             padding: 10px 0;
         }
@@ -273,7 +293,7 @@
             text-align: center;
             margin-top: 40px;
             font-size: 0.55rem;
-            color: #666;
+            color: #999;
             animation: blink 1.5s step-end infinite;
         }
 
@@ -333,8 +353,16 @@
         </div>
 
         <div id="scores-panel" class="scores-panel" style="display: none;">
-            <h2>HIGH SCORES</h2>
-            <ul id="scores-list" class="scores-list"></ul>
+            <h2>TEST RESULTS</h2>
+            <ul id="scores-list" class="scores-list">
+                <li class="score-row score-header">
+                    <span>GAME</span>
+                    <span>METHOD</span>
+                    <span>PROGRESS</span>
+                    <span>BIG 5 TRAIT</span>
+                    <span style="text-align:right">SCORE</span>
+                </li>
+            </ul>
         </div>
 
         <p class="coin-insert">INSERT COIN TO CONTINUE</p>
@@ -390,7 +418,8 @@
                     <span class="score-game">🏛️ MUSEUM</span>
                     <span class="score-detail">${method}</span>
                     <span class="score-detail">${m.uniqueDescriptions}/6 FOUND</span>
-                    <span class="score-value">${pct}%</span>
+                    <span class="score-trait">OPENNESS</span>
+                    <span class="score-value" style="text-align:right">${pct}%</span>
                 `;
                 scoresList.appendChild(row);
                 hasScores = true;
