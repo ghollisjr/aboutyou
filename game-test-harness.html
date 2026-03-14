@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Loader - Test Harness</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; }
+        #controls {
+            padding: 20px;
+            background: #f0f0f0;
+            border-bottom: 2px solid #ccc;
+        }
+        #game-container {
+            width: 100%;
+            height: calc(100vh - 100px);
+            position: relative;
+        }
+        select, button {
+            padding: 10px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        #results {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #ccc;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label>Select Game:</label>
+        <select id="game-select">
+            <option value="wandering-museum-3d-no-export.jsx">Wandering Museum (Openness)</option>
+            <!-- Add more games here as you create them -->
+        </select>
+        <button onclick="loadGame()">Load Game</button>
+        <div id="results"></div>
+    </div>
+    <div id="game-container"></div>
+
+    <!-- React, ReactDOM, and Three.js -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        const { useState, useEffect, useRef } = React;
+        let currentRoot = null;
+
+        async function loadGame() {
+            const select = document.getElementById('game-select');
+            const gamePath = select.value;
+            const container = document.getElementById('game-container');
+            const results = document.getElementById('results');
+            
+            // Clear previous game
+            container.innerHTML = '<div id="root"></div>';
+            results.style.display = 'none';
+            
+            try {
+                // Fetch the JSX file
+                const response = await fetch(gamePath);
+                const jsxCode = await response.text();
+                
+                // Transform JSX to JS using Babel
+                const transformed = Babel.transform(jsxCode, {
+                    presets: ['react']
+                }).code;
+                
+                // Remove import statements (we're loading from CDN)
+                const cleanCode = transformed
+                    .replace(/import.*from.*['"]react['"];?/g, '')
+                    .replace(/import.*from.*['"]three['"];?/g, '')
+                    .replace(/export default.*;?/g, '');
+                
+                // Execute the transformed code in a way that captures the component
+                // Wrap in a function that returns the component
+                const componentCode = `
+                    (function() {
+                        ${cleanCode}
+                        return WanderingMuseum;
+                    })()
+                `;
+                
+                const GameComponent = eval(componentCode);
+                
+                // Render the component
+                function onComplete(gameResults) {
+                    console.log('Game completed!', gameResults);
+                    results.style.display = 'block';
+                    results.innerHTML = `
+                        <h3>Game Complete!</h3>
+                        <p><strong>Completion Method:</strong> ${gameResults.completionMethod}</p>
+                        <p><strong>Openness Score:</strong> ${Math.round(gameResults.abstractnessLevel * 100)}%</p>
+                        <p><strong>Items Found:</strong> ${gameResults.uniqueDescriptions}</p>
+                        <p><strong>Completion:</strong> ${Math.round(gameResults.completionRatio * 100)}%</p>
+                    `;
+                }
+                
+                // Render
+                if (currentRoot) {
+                    currentRoot.unmount();
+                }
+                currentRoot = ReactDOM.createRoot(document.getElementById('root'));
+                currentRoot.render(React.createElement(GameComponent, { onComplete }));
+                
+            } catch (error) {
+                console.error('Error loading game:', error);
+                alert('Error loading game: ' + error.message);
+            }
+        }
+        
+        // Auto-load first game on page load
+        window.addEventListener('load', loadGame);
+    </script>
+</body>
+</html>
