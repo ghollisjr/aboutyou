@@ -161,6 +161,35 @@
             animation: pulse-glow 2s ease-in-out infinite;
         }
 
+        .status-replay {
+            color: #0a0a1a;
+            background: #ff9933;
+            animation: pulse-glow-replay 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow-replay {
+            0%, 100% { box-shadow: 0 0 5px rgba(255, 153, 51, 0.4); }
+            50% { box-shadow: 0 0 15px rgba(255, 153, 51, 0.7); }
+        }
+
+        .game-card.played {
+            border-color: #ff9933;
+            box-shadow: 0 0 15px rgba(255, 153, 51, 0.15);
+        }
+
+        .game-card.played:hover {
+            border-color: #ff9933;
+            box-shadow:
+                0 0 15px rgba(255, 153, 51, 0.3),
+                0 0 30px rgba(255, 153, 51, 0.15),
+                inset 0 0 30px rgba(255, 153, 51, 0.05);
+        }
+
+        .played .game-title {
+            color: #ff9933;
+            text-shadow: 0 0 8px rgba(255, 153, 51, 0.4);
+        }
+
         .status-locked {
             color: #555;
             background: #1a1a2e;
@@ -184,6 +213,60 @@
             font-size: 0.45rem;
             color: #444;
             line-height: 2;
+        }
+
+        .scores-panel {
+            margin-top: 40px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 24px;
+            background: linear-gradient(180deg, #12122a 0%, #0a0a18 100%);
+        }
+
+        .scores-panel h2 {
+            font-size: 0.8rem;
+            color: #ff9933;
+            text-shadow: 0 0 8px rgba(255, 153, 51, 0.4);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .scores-list {
+            list-style: none;
+        }
+
+        .score-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #1a1a2e;
+            font-size: 0.5rem;
+        }
+
+        .score-row:last-child {
+            border-bottom: none;
+        }
+
+        .score-game {
+            color: #aaa;
+        }
+
+        .score-value {
+            color: #00ffcc;
+            text-shadow: 0 0 6px rgba(0, 255, 204, 0.3);
+        }
+
+        .score-detail {
+            color: #666;
+            font-size: 0.4rem;
+        }
+
+        .scores-empty {
+            text-align: center;
+            color: #444;
+            font-size: 0.45rem;
+            padding: 10px 0;
         }
 
         .coin-insert {
@@ -216,7 +299,7 @@
 
         <div class="games-grid">
             <!-- Playable: Museum -->
-            <div class="game-card playable">
+            <div id="museum-card" class="game-card playable">
                 <a href="games/museum.html" aria-label="Play Museum"></a>
                 <span class="game-icon">🏛️</span>
                 <div class="game-title">MUSEUM</div>
@@ -249,11 +332,82 @@
             </div>
         </div>
 
+        <div id="scores-panel" class="scores-panel" style="display: none;">
+            <h2>HIGH SCORES</h2>
+            <ul id="scores-list" class="scores-list"></ul>
+        </div>
+
         <p class="coin-insert">INSERT COIN TO CONTINUE</p>
 
         <div class="footer">
             <p>&copy; 2026 ABOUT YOU &mdash; ALL RIGHTS RESERVED</p>
+            <button id="reset-session-btn" style="
+                margin-top: 16px;
+                padding: 6px 16px;
+                font-family: 'Press Start 2P', monospace;
+                font-size: 0.4rem;
+                color: #666;
+                background: transparent;
+                border: 1px solid #333;
+                border-radius: 4px;
+                cursor: pointer;
+            " onmouseover="this.style.color='#ff4444';this.style.borderColor='#ff4444'"
+               onmouseout="this.style.color='#666';this.style.borderColor='#333'">
+                RESET SESSION
+            </button>
         </div>
     </div>
+    <script>
+        // Check which games have been played this session
+        if (sessionStorage.getItem('museum_played')) {
+            const card = document.getElementById('museum-card');
+            if (card) {
+                card.classList.remove('playable');
+                card.classList.add('playable', 'played');
+                const status = card.querySelector('.game-status');
+                status.className = 'game-status status-replay';
+                status.innerHTML = '&#9654; PLAY AGAIN';
+            }
+        }
+
+        // Build scores panel from session results
+        const scoresList = document.getElementById('scores-list');
+        const scoresPanel = document.getElementById('scores-panel');
+        let hasScores = false;
+
+        // Museum
+        const museumRaw = sessionStorage.getItem('museum_results');
+        if (museumRaw) {
+            try {
+                const m = JSON.parse(museumRaw);
+                const method = m.completionMethod === 'trip' ? 'PSYCHEDELIC PORTAL'
+                    : m.completionMethod === 'sober' ? 'FULL TOUR'
+                    : 'EARLY EXIT';
+                const pct = Math.round(m.abstractnessLevel * 100);
+                const row = document.createElement('li');
+                row.className = 'score-row';
+                row.innerHTML = `
+                    <span class="score-game">🏛️ MUSEUM</span>
+                    <span class="score-detail">${method}</span>
+                    <span class="score-detail">${m.uniqueDescriptions}/6 FOUND</span>
+                    <span class="score-value">${pct}%</span>
+                `;
+                scoresList.appendChild(row);
+                hasScores = true;
+            } catch(e) {}
+        }
+
+        // (Future games would add rows here)
+
+        if (hasScores) {
+            scoresPanel.style.display = '';
+        }
+
+        // Reset session button
+        document.getElementById('reset-session-btn').addEventListener('click', function() {
+            sessionStorage.clear();
+            location.reload();
+        });
+    </script>
 </body>
 </html>

@@ -6,14 +6,18 @@ import './museum-main.css';
 function App() {
   const handleComplete = (results) => {
     console.log('Museum completed!', results);
-    alert(
-      `Museum Complete!\nMethod: ${results.completionMethod}\nOpenness Score: ${Math.round(results.abstractnessLevel * 100)}%`
-    );
 
     // Send to parent if in iframe
     if (window.parent !== window) {
       window.parent.postMessage({ type: 'MUSEUM_COMPLETE', data: results }, '*');
     }
+
+    // Store results for this session
+    sessionStorage.setItem('museum_played', '1');
+    sessionStorage.setItem('museum_results', JSON.stringify(results));
+
+    // Navigate back to main page
+    window.location.href = '../index.html';
   };
 
   return <WanderingMuseum onComplete={handleComplete} />;
