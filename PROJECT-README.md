@@ -1,5 +1,7 @@
 # Big Five Personality Assessment - Interactive 3D Games
 
+**Live:** https://ghollisjr.github.io/aboutyou/
+
 ## Project Overview
 
 A personality assessment system using 5 interactive 3D games to measure the Big Five (OCEAN) personality traits. Each game subtly measures one trait through engaging gameplay mechanics rather than explicit questions.
@@ -158,13 +160,13 @@ Push to `main` branch. The GitHub Actions workflow (`.github/workflows/deploy.ym
 3. Builds (`npm run build`)
 4. Deploys `dist/` to GitHub Pages
 
-Live URL: `https://<user>.github.io/aboutyou/`
+Live URL: `https://ghollisjr.github.io/aboutyou/`
 
 ### 4. Embedding in Webflow
 
 ```html
 <iframe
-    src="https://<user>.github.io/aboutyou/games/museum.html"
+    src="https://ghollisjr.github.io/aboutyou/games/museum.html"
     width="100%"
     height="800px"
     frameborder="0"

@@ -1,7 +1,8 @@
 * README
 This project uses Vite + React to build interactive 3D personality
-assessment games. The repo deploys to GitHub Pages at
-=https://<user>.github.io/aboutyou/=.
+assessment games.
+
+Live: https://ghollisjr.github.io/aboutyou/
 
 ** Quick Start
 
