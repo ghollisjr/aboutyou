@@ -10,6 +10,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const invertYRef = useRef(false);
   const [isTripping, setIsTripping] = useState(false);
   const trippingRef = useRef(false);
+  const [examinedCount, setExaminedCount] = useState(0);
   const [isAligned, setIsAligned] = useState(false);
   const [alignmentProgress, setAlignmentProgress] = useState(0);
   const alignmentTimeRef = useRef(0);
@@ -37,6 +38,164 @@ const WanderingMuseum = ({ onComplete }) => {
     completionMethod: null // 'early', 'sober', 'trip'
   });
 
+  // --- Parametric Geometry Builders ---
+
+  function createMobiusStrip(radius = 1, width = 0.4, segments = 100) {
+    const geometry = new THREE.BufferGeometry();
+    const widthSteps = 2;
+    const vertices = [];
+    const indices = [];
+    const normals = [];
+    const uvs = [];
+
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * Math.PI * 2;
+      for (let j = 0; j <= widthSteps; j++) {
+        const t = (j / widthSteps - 0.5) * width;
+        const x = (radius + t * Math.cos(theta / 2)) * Math.cos(theta);
+        const y = (radius + t * Math.cos(theta / 2)) * Math.sin(theta);
+        const z = t * Math.sin(theta / 2);
+        vertices.push(x, z, y); // swap y/z so strip is horizontal
+
+        // Approximate normal via cross product of partial derivatives
+        const dTheta = 0.001;
+        const x2 = (radius + t * Math.cos((theta + dTheta) / 2)) * Math.cos(theta + dTheta);
+        const y2 = (radius + t * Math.cos((theta + dTheta) / 2)) * Math.sin(theta + dTheta);
+        const z2 = t * Math.sin((theta + dTheta) / 2);
+        const dt = 0.001;
+        const x3 = (radius + (t + dt) * Math.cos(theta / 2)) * Math.cos(theta);
+        const y3 = (radius + (t + dt) * Math.cos(theta / 2)) * Math.sin(theta);
+        const z3 = (t + dt) * Math.sin(theta / 2);
+        const tx1 = x2 - x, ty1 = z2 - z, tz1 = y2 - y;
+        const tx2 = x3 - x, ty2 = z3 - z, tz2 = y3 - y;
+        let nx = ty1 * tz2 - tz1 * ty2;
+        let ny = tz1 * tx2 - tx1 * tz2;
+        let nz = tx1 * ty2 - ty1 * tx2;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        normals.push(nx / len, ny / len, nz / len);
+
+        uvs.push(i / segments, j / widthSteps);
+      }
+    }
+
+    for (let i = 0; i < segments; i++) {
+      for (let j = 0; j < widthSteps; j++) {
+        const a = i * (widthSteps + 1) + j;
+        const b = a + widthSteps + 1;
+        const c = a + 1;
+        const d = b + 1;
+        indices.push(a, b, c);
+        indices.push(c, b, d);
+      }
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    return geometry;
+  }
+
+  function createKleinBottle(scale = 1, uSegments = 60, vSegments = 30) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const indices = [];
+    const uvs = [];
+    const a = 2.0;
+
+    for (let i = 0; i <= uSegments; i++) {
+      const u = (i / uSegments) * Math.PI * 2;
+      for (let j = 0; j <= vSegments; j++) {
+        const v = (j / vSegments) * Math.PI * 2;
+        const cosU = Math.cos(u), sinU = Math.sin(u);
+        const cosUh = Math.cos(u / 2), sinUh = Math.sin(u / 2);
+        const sinV = Math.sin(v), sin2V = Math.sin(2 * v);
+
+        const x = (a + cosUh * sinV - sinUh * sin2V) * cosU * scale;
+        const y = (a + cosUh * sinV - sinUh * sin2V) * sinU * scale;
+        const z = (sinUh * sinV + cosUh * sin2V) * scale;
+        vertices.push(x, z, y); // swap y/z for upright orientation
+
+        uvs.push(i / uSegments, j / vSegments);
+      }
+    }
+
+    for (let i = 0; i < uSegments; i++) {
+      for (let j = 0; j < vSegments; j++) {
+        const ai = i * (vSegments + 1) + j;
+        const b = ai + vSegments + 1;
+        const c = ai + 1;
+        const d = b + 1;
+        indices.push(ai, b, c);
+        indices.push(c, b, d);
+      }
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function createTeapot(scale = 1) {
+    const group = new THREE.Group();
+
+    // Lathe body - teapot silhouette profile
+    const profile = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(0.6, 0),
+      new THREE.Vector2(0.9, 0.1),
+      new THREE.Vector2(1.1, 0.3),
+      new THREE.Vector2(1.2, 0.5),
+      new THREE.Vector2(1.25, 0.8),
+      new THREE.Vector2(1.2, 1.1),
+      new THREE.Vector2(1.1, 1.3),
+      new THREE.Vector2(1.0, 1.5),
+      new THREE.Vector2(0.9, 1.6),
+      new THREE.Vector2(0.85, 1.65),
+      new THREE.Vector2(0.8, 1.7),
+      // Lid rim
+      new THREE.Vector2(0.85, 1.72),
+      new THREE.Vector2(0.8, 1.75),
+      new THREE.Vector2(0.6, 1.8),
+      new THREE.Vector2(0.4, 1.85),
+      new THREE.Vector2(0.2, 1.88),
+      // Lid knob
+      new THREE.Vector2(0.15, 1.9),
+      new THREE.Vector2(0.12, 1.95),
+      new THREE.Vector2(0.08, 2.0),
+      new THREE.Vector2(0, 2.02),
+    ];
+    profile.forEach(p => { p.x *= scale; p.y *= scale; });
+
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: 0xeeeeff,
+      roughness: 0.2,
+      metalness: 0.6
+    });
+
+    const bodyGeometry = new THREE.LatheGeometry(profile, 32);
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    group.add(body);
+
+    // Handle (torus on the side)
+    const handleGeometry = new THREE.TorusGeometry(0.4 * scale, 0.08 * scale, 12, 24, Math.PI);
+    const handle = new THREE.Mesh(handleGeometry, bodyMaterial);
+    handle.position.set(-1.15 * scale, 1.0 * scale, 0);
+    handle.rotation.z = Math.PI / 2;
+    group.add(handle);
+
+    // Spout (tapered cylinder)
+    const spoutGeometry = new THREE.CylinderGeometry(0.06 * scale, 0.12 * scale, 0.8 * scale, 12);
+    const spout = new THREE.Mesh(spoutGeometry, bodyMaterial);
+    spout.position.set(1.1 * scale, 1.1 * scale, 0);
+    spout.rotation.z = -Math.PI / 4;
+    group.add(spout);
+
+    return group;
+  }
+
   useEffect(() => {
     // Detect mobile
     const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -44,8 +203,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Three.js setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0a);
-    scene.fog = new THREE.Fog(0x0a0a0a, 10, 50);
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.Fog(0x1a1a2e, 25, 65);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -110,25 +269,33 @@ const WanderingMuseum = ({ onComplete }) => {
     tripScene.add(tripQuad);
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
     scene.add(ambientLight);
 
-    const pointLight1 = new THREE.PointLight(0xffffff, 0.8, 30);
+    const pointLight1 = new THREE.PointLight(0xffffff, 1.5, 50);
     pointLight1.position.set(0, 5, 0);
     scene.add(pointLight1);
 
-    const pointLight2 = new THREE.PointLight(0xffffff, 0.6, 25);
+    const pointLight2 = new THREE.PointLight(0xffffff, 1.2, 40);
     pointLight2.position.set(-10, 5, -10);
     scene.add(pointLight2);
 
-    const pointLight3 = new THREE.PointLight(0xffffff, 0.6, 25);
+    const pointLight3 = new THREE.PointLight(0xffffff, 1.2, 40);
     pointLight3.position.set(10, 5, 10);
     scene.add(pointLight3);
+
+    const pointLight4 = new THREE.PointLight(0xffffff, 1.0, 40);
+    pointLight4.position.set(10, 5, -10);
+    scene.add(pointLight4);
+
+    const pointLight5 = new THREE.PointLight(0xffffff, 1.0, 40);
+    pointLight5.position.set(-10, 5, 10);
+    scene.add(pointLight5);
 
     // Floor
     const floorGeometry = new THREE.PlaneGeometry(40, 40);
     const floorMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x1a1a1a,
+      color: 0x2a2a3a,
       roughness: 0.8,
       metalness: 0.2
     });
@@ -151,7 +318,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Walls to create gallery rooms
     const wallMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x2a2a2a,
+      color: 0x3a3a4a,
       roughness: 0.9,
       transparent: true,
       opacity: 1.0
@@ -191,94 +358,153 @@ const WanderingMuseum = ({ onComplete }) => {
     interiorWall2.position.set(8, 3, -10);
     scene.add(interiorWall2);
 
-    // Art pieces - abstract sculptures and paintings
+    // Warm glow from hidden room, visible through the gap in the interior wall
+    const hiddenRoomGlow = new THREE.PointLight(0xffaa44, 2.0, 25);
+    hiddenRoomGlow.position.set(0, 3, -14);
+    scene.add(hiddenRoomGlow);
+
+    // Art pieces - mathematical sculptures on pedestals
     const artPieces = [];
 
-    // Art Piece 1: Floating cube sculpture
-    const art1Group = new THREE.Group();
-    const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-    const cubeMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffffff,
-      emissive: 0x444444,
-      roughness: 0.5,
-      metalness: 0.8
-    });
-    const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-    cube.position.y = 2;
-    art1Group.add(cube);
-    art1Group.position.set(-8, 0, -15);
-    scene.add(art1Group);
-    artPieces.push({ mesh: art1Group, id: 'cube', examined: false, rotatable: true });
+    // Pedestal factory function
+    const createPedestal = (name, artMesh, position) => {
+      const group = new THREE.Group();
 
-    // Art Piece 2: Torus knot
-    const torusGeometry = new THREE.TorusKnotGeometry(1, 0.3, 100, 16);
-    const torusMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xcccccc,
-      roughness: 0.3,
-      metalness: 0.9
-    });
-    const torus = new THREE.Mesh(torusGeometry, torusMaterial);
-    torus.position.set(8, 2, -15);
-    scene.add(torus);
-    artPieces.push({ mesh: torus, id: 'torus', examined: false, rotatable: true });
-
-    // Art Piece 3: Sphere cluster
-    const sphereGroup = new THREE.Group();
-    for (let i = 0; i < 5; i++) {
-      const sphereGeometry = new THREE.SphereGeometry(0.3 + Math.random() * 0.4, 32, 32);
-      const sphereMaterial = new THREE.MeshStandardMaterial({ 
-        color: new THREE.Color().setHSL(Math.random(), 0.5, 0.7),
-        roughness: 0.4,
-        metalness: 0.6
+      const pedestalMaterial = new THREE.MeshStandardMaterial({
+        color: 0xdddddd, roughness: 0.6, metalness: 0.1
       });
-      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      sphere.position.set(
-        (Math.random() - 0.5) * 2,
-        1 + Math.random() * 2,
-        (Math.random() - 0.5) * 2
+      const columnMaterial = new THREE.MeshStandardMaterial({
+        color: 0x555555, roughness: 0.7, metalness: 0.2
+      });
+
+      // Base slab
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 1.8), pedestalMaterial);
+      base.position.y = 0.05;
+      group.add(base);
+
+      // Column
+      const column = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.0, 16), columnMaterial);
+      column.position.y = 0.6;
+      group.add(column);
+
+      // Top slab
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 1.5), pedestalMaterial);
+      top.position.y = 1.15;
+      group.add(top);
+
+      // Name plate (canvas texture)
+      const labelCanvas = document.createElement('canvas');
+      labelCanvas.width = 256;
+      labelCanvas.height = 64;
+      const labelCtx = labelCanvas.getContext('2d');
+      labelCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      labelCtx.fillRect(0, 0, 256, 64);
+      labelCtx.fillStyle = '#ffffff';
+      labelCtx.font = 'bold 20px system-ui';
+      labelCtx.textAlign = 'center';
+      labelCtx.fillText(name, 128, 40);
+      const labelTex = new THREE.CanvasTexture(labelCanvas);
+      const labelPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.2, 0.3),
+        new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
       );
-      sphereGroup.add(sphere);
-    }
-    sphereGroup.position.set(-10, 0, 5);
-    scene.add(sphereGroup);
-    artPieces.push({ mesh: sphereGroup, id: 'spheres', examined: false, rotatable: true });
+      labelPlane.position.set(0, 0.6, 0.92);
+      group.add(labelPlane);
 
-    // Art Piece 4: Wall painting (flat rectangle)
-    const paintingGeometry = new THREE.PlaneGeometry(3, 2);
-    const paintingMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x888888,
-      roughness: 0.7,
-      side: THREE.DoubleSide
-    });
-    const painting = new THREE.Mesh(paintingGeometry, paintingMaterial);
-    painting.position.set(0, 3, -19.5);
-    scene.add(painting);
-    artPieces.push({ mesh: painting, id: 'painting', examined: false, rotatable: false });
+      // Art mesh on top
+      artMesh.position.y = 1.2 + 1.0; // top of pedestal + offset for art center
+      group.add(artMesh);
 
-    // Art Piece 5: Hidden area sculpture (behind the wall)
-    const hiddenArtGeometry = new THREE.OctahedronGeometry(1.2);
-    const hiddenArtMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffaa00,
-      emissive: 0x442200,
-      roughness: 0.2,
-      metalness: 1.0
-    });
-    const hiddenArt = new THREE.Mesh(hiddenArtGeometry, hiddenArtMaterial);
-    hiddenArt.position.set(0, 2, -15);
-    scene.add(hiddenArt);
-    artPieces.push({ mesh: hiddenArt, id: 'hidden', examined: false, rotatable: true, isHidden: true });
+      group.position.set(position.x, position.y, position.z);
+      return group;
+    };
 
-    // Art Piece 6: Another visible piece
-    const coneGeometry = new THREE.ConeGeometry(0.8, 2, 32);
-    const coneMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xdddddd,
-      roughness: 0.6,
-      metalness: 0.4
-    });
-    const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-    cone.position.set(10, 1, 10);
-    scene.add(cone);
-    artPieces.push({ mesh: cone, id: 'cone', examined: false, rotatable: true });
+    // --- 1. Utah Teapot ---
+    const teapotMesh = createTeapot(0.7);
+    const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-8, 0, -5));
+    scene.add(teapotPedestal);
+    artPieces.push({ mesh: teapotPedestal, artMesh: teapotMesh, id: 'teapot', examined: false, rotatable: true });
+
+    // --- 2. Icosahedron ---
+    const icoMesh = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.0),
+      new THREE.MeshStandardMaterial({
+        color: 0x4488ff,
+        transparent: true,
+        opacity: 0.85,
+        emissive: 0x224488,
+        emissiveIntensity: 0.4,
+        roughness: 0.2,
+        metalness: 0.5
+      })
+    );
+    const icoPedestal = createPedestal('Icosahedron', icoMesh, new THREE.Vector3(8, 0, -5));
+    scene.add(icoPedestal);
+    artPieces.push({ mesh: icoPedestal, artMesh: icoMesh, id: 'icosahedron', examined: false, rotatable: true });
+
+    // --- 3. Dodecahedron ---
+    const dodecMesh = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(1.0),
+      new THREE.MeshStandardMaterial({
+        color: 0x22cc88,
+        roughness: 0.3,
+        metalness: 0.8,
+        emissive: 0x114422,
+        emissiveIntensity: 0.2
+      })
+    );
+    const dodecPedestal = createPedestal('Dodecahedron', dodecMesh, new THREE.Vector3(-10, 0, 5));
+    scene.add(dodecPedestal);
+    artPieces.push({ mesh: dodecPedestal, artMesh: dodecMesh, id: 'dodecahedron', examined: false, rotatable: true });
+
+    // --- 4. Möbius Strip ---
+    const mobiusGeometry = createMobiusStrip(1.0, 0.4, 100);
+    const mobiusMesh = new THREE.Mesh(
+      mobiusGeometry,
+      new THREE.MeshStandardMaterial({
+        color: 0xaa66ff,
+        emissive: 0x552288,
+        emissiveIntensity: 0.3,
+        roughness: 0.3,
+        metalness: 0.6,
+        side: THREE.DoubleSide
+      })
+    );
+    const mobiusPedestal = createPedestal('Möbius Strip', mobiusMesh, new THREE.Vector3(10, 0, 5));
+    scene.add(mobiusPedestal);
+    artPieces.push({ mesh: mobiusPedestal, artMesh: mobiusMesh, id: 'mobius', examined: false, rotatable: true });
+
+    // --- 5. Klein Bottle (hidden room) ---
+    const kleinGeometry = createKleinBottle(0.4, 60, 30);
+    const kleinMesh = new THREE.Mesh(
+      kleinGeometry,
+      new THREE.MeshStandardMaterial({
+        color: 0xffaa44,
+        emissive: 0x885522,
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity: 0.8,
+        roughness: 0.2,
+        metalness: 0.4,
+        side: THREE.DoubleSide
+      })
+    );
+    const kleinPedestal = createPedestal('Klein Bottle', kleinMesh, new THREE.Vector3(0, 0, -15));
+    scene.add(kleinPedestal);
+    artPieces.push({ mesh: kleinPedestal, artMesh: kleinMesh, id: 'klein', examined: false, rotatable: true, isHidden: true });
+
+    // --- 6. Torus Knot ---
+    const torusKnotMesh = new THREE.Mesh(
+      new THREE.TorusKnotGeometry(0.8, 0.25, 128, 32, 3, 2),
+      new THREE.MeshStandardMaterial({
+        color: 0xcccccc,
+        roughness: 0.1,
+        metalness: 0.95
+      })
+    );
+    const torusKnotPedestal = createPedestal('Torus Knot', torusKnotMesh, new THREE.Vector3(0, 0, 8));
+    scene.add(torusKnotPedestal);
+    artPieces.push({ mesh: torusKnotPedestal, artMesh: torusKnotMesh, id: 'torusknot', examined: false, rotatable: true });
 
     // THE BUTTON - Trip Balls Table
     const tableGroup = new THREE.Group();
@@ -581,6 +807,7 @@ const WanderingMuseum = ({ onComplete }) => {
     let pitch = 0;
     let pointerLocked = false;
     let pointerLockSupported = true;
+    let skipNextClick = false;
     let gamepadIndex = null;
 
     // Gamepad detection
@@ -625,7 +852,11 @@ const WanderingMuseum = ({ onComplete }) => {
     };
 
     const onPointerLockChange = () => {
+      const wasLocked = pointerLocked;
       pointerLocked = document.pointerLockElement === renderer.domElement;
+      if (!wasLocked && pointerLocked) {
+        skipNextClick = true;
+      }
     };
 
     const onPointerLockError = () => {
@@ -680,6 +911,11 @@ const WanderingMuseum = ({ onComplete }) => {
       if (!mobile && pointerLockSupported && !pointerLocked) {
         return;
       }
+      // Skip the click that triggered pointer lock acquisition
+      if (skipNextClick) {
+        skipNextClick = false;
+        return;
+      }
 
       // Raycast to check for art pieces
       const raycaster = new THREE.Raycaster();
@@ -703,13 +939,14 @@ const WanderingMuseum = ({ onComplete }) => {
       if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
         const artPiece = artPieces.find(p => 
-          p.mesh === clickedMesh || p.mesh.children.includes(clickedMesh)
+          p.mesh === clickedMesh || clickedMesh.traverseAncestors && (() => { let found = false; let obj = clickedMesh; while (obj) { if (obj === p.mesh) { found = true; break; } obj = obj.parent; } return found; })()
         );
 
         if (artPiece && !artPiece.examined) {
           artPiece.examined = true;
           gameStateRef.current.artPiecesExamined.add(artPiece.id);
-          
+          setExaminedCount(gameStateRef.current.artPiecesExamined.size);
+
           if (artPiece.isHidden) {
             gameStateRef.current.hiddenAreasFound.add(artPiece.id);
           }
@@ -742,12 +979,14 @@ const WanderingMuseum = ({ onComplete }) => {
           }
 
           // Visual feedback - pulse emissive
-          if (artPiece.mesh.material && !artPiece.isButton && !artPiece.isTripExit) {
-            const originalEmissive = artPiece.mesh.material.emissive?.getHex() || 0x000000;
-            artPiece.mesh.material.emissive = new THREE.Color(0xffffff);
+          const feedbackMesh = artPiece.artMesh || artPiece.mesh;
+          const feedbackMat = feedbackMesh.material;
+          if (feedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
+            const originalEmissive = feedbackMat.emissive?.getHex() || 0x000000;
+            feedbackMat.emissive = new THREE.Color(0xffffff);
             setTimeout(() => {
-              if (artPiece.mesh.material) {
-                artPiece.mesh.material.emissive = new THREE.Color(originalEmissive);
+              if (feedbackMat) {
+                feedbackMat.emissive = new THREE.Color(originalEmissive);
               }
             }, 300);
           }
@@ -955,13 +1194,14 @@ const WanderingMuseum = ({ onComplete }) => {
             if (intersects.length > 0) {
               const clickedMesh = intersects[0].object;
               const artPiece = artPieces.find(p => 
-                p.mesh === clickedMesh || p.mesh.children.includes(clickedMesh)
+                p.mesh === clickedMesh || clickedMesh.traverseAncestors && (() => { let found = false; let obj = clickedMesh; while (obj) { if (obj === p.mesh) { found = true; break; } obj = obj.parent; } return found; })()
               );
               
               if (artPiece && !artPiece.examined) {
                 artPiece.examined = true;
                 gameStateRef.current.artPiecesExamined.add(artPiece.id);
-                
+                setExaminedCount(gameStateRef.current.artPiecesExamined.size);
+
                 if (artPiece.isHidden) {
                   gameStateRef.current.hiddenAreasFound.add(artPiece.id);
                 }
@@ -994,12 +1234,14 @@ const WanderingMuseum = ({ onComplete }) => {
                 }
                 
                 // Visual feedback for regular art pieces
-                if (artPiece.mesh.material && !artPiece.isButton && !artPiece.isTripExit) {
-                  const originalEmissive = artPiece.mesh.material.emissive?.getHex() || 0x000000;
-                  artPiece.mesh.material.emissive = new THREE.Color(0xffffff);
+                const gpFeedbackMesh = artPiece.artMesh || artPiece.mesh;
+                const gpFeedbackMat = gpFeedbackMesh.material;
+                if (gpFeedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
+                  const originalEmissive = gpFeedbackMat.emissive?.getHex() || 0x000000;
+                  gpFeedbackMat.emissive = new THREE.Color(0xffffff);
                   setTimeout(() => {
-                    if (artPiece.mesh.material) {
-                      artPiece.mesh.material.emissive = new THREE.Color(originalEmissive);
+                    if (gpFeedbackMat) {
+                      gpFeedbackMat.emissive = new THREE.Color(originalEmissive);
                     }
                   }, 300);
                 }
@@ -1145,10 +1387,11 @@ const WanderingMuseum = ({ onComplete }) => {
         });
       }
 
-      // Rotate art pieces that are being examined
+      // Rotate art pieces that are being examined (just the art, not the pedestal)
       artPieces.forEach(piece => {
         if (piece.examined && piece.rotatable) {
-          piece.mesh.rotation.y += 0.01;
+          const target = piece.artMesh || piece.mesh;
+          target.rotation.y += 0.01;
           gameStateRef.current.rotationsPerformed += 0.01;
         }
       });
@@ -1443,8 +1686,8 @@ const WanderingMuseum = ({ onComplete }) => {
             opacity: 0.6
           }}>
             <div>
-              Art examined: {gameStateRef.current.artPiecesExamined.size - (gameStateRef.current.trippedBalls ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / 6
-              {gameStateRef.current.artPiecesExamined.size - (gameStateRef.current.trippedBalls ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) === 6 && !isTripping && (
+              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / 6
+              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= 6 && !isTripping && (
                 <span style={{ color: '#00ff00', marginLeft: '10px' }}>✓ Complete!</span>
               )}
             </div>
