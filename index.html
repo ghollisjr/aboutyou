@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About You</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-family: 'Press Start 2P', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Scanline overlay */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.15) 2px,
+                rgba(0, 0, 0, 0.15) 4px
+            );
+            z-index: 1000;
+        }
+
+        /* CRT vignette */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: radial-gradient(
+                ellipse at center,
+                transparent 60%,
+                rgba(0, 0, 0, 0.5) 100%
+            );
+            z-index: 999;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.2rem;
+            margin-bottom: 12px;
+            color: #fff;
+            text-shadow:
+                0 0 10px #ff00ff,
+                0 0 20px #ff00ff,
+                0 0 40px #ff00ff,
+                0 0 80px #ff00ff;
+            animation: flicker 4s infinite;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 0.6rem;
+            color: #888;
+            margin-bottom: 50px;
+            line-height: 1.8;
+        }
+
+        @keyframes flicker {
+            0%, 95%, 100% { opacity: 1; }
+            96% { opacity: 0.8; }
+            97% { opacity: 1; }
+            98% { opacity: 0.7; }
+            99% { opacity: 1; }
+        }
+
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 24px;
+        }
+
+        .game-card {
+            border: 3px solid #333;
+            border-radius: 8px;
+            padding: 28px 20px;
+            text-align: center;
+            position: relative;
+            transition: all 0.2s;
+            background: linear-gradient(180deg, #12122a 0%, #0a0a18 100%);
+        }
+
+        .game-card.playable {
+            border-color: #00ffcc;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.15);
+        }
+
+        .game-card.playable:hover {
+            border-color: #00ffcc;
+            box-shadow:
+                0 0 15px rgba(0, 255, 204, 0.3),
+                0 0 30px rgba(0, 255, 204, 0.15),
+                inset 0 0 30px rgba(0, 255, 204, 0.05);
+            transform: translateY(-3px);
+        }
+
+        .game-card.locked {
+            border-color: #222;
+            opacity: 0.45;
+        }
+
+        .game-icon {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .game-title {
+            font-size: 0.75rem;
+            margin-bottom: 10px;
+            line-height: 1.6;
+            color: #fff;
+        }
+
+        .playable .game-title {
+            color: #00ffcc;
+            text-shadow: 0 0 8px rgba(0, 255, 204, 0.4);
+        }
+
+        .game-status {
+            font-size: 0.5rem;
+            padding: 4px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 6px;
+        }
+
+        .status-play {
+            color: #0a0a1a;
+            background: #00ffcc;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        .status-locked {
+            color: #555;
+            background: #1a1a2e;
+            border: 1px solid #333;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 5px rgba(0, 255, 204, 0.4); }
+            50% { box-shadow: 0 0 15px rgba(0, 255, 204, 0.7); }
+        }
+
+        .game-card.playable a {
+            position: absolute;
+            inset: 0;
+            text-decoration: none;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            font-size: 0.45rem;
+            color: #444;
+            line-height: 2;
+        }
+
+        .coin-insert {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 0.55rem;
+            color: #666;
+            animation: blink 1.5s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 1.4rem; }
+            .container { padding: 24px 14px; }
+            .games-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ABOUT YOU</h1>
+        <p class="subtitle">SELECT A GAME TO PLAY</p>
+
+        <div class="games-grid">
+            <!-- Playable: The Wandering Museum -->
+            <div class="game-card playable">
+                <a href="games/museum.html" aria-label="Play The Wandering Museum"></a>
+                <span class="game-icon">🏛️</span>
+                <div class="game-title">THE WANDERING MUSEUM</div>
+                <span class="game-status status-play">&#9654; PLAY</span>
+            </div>
+
+            <!-- Coming Soon -->
+            <div class="game-card locked">
+                <span class="game-icon">🔨</span>
+                <div class="game-title">THE BUILDER</div>
+                <span class="game-status status-locked">COMING SOON</span>
+            </div>
+
+            <div class="game-card locked">
+                <span class="game-icon">🤝</span>
+                <div class="game-title">THE GATHERING</div>
+                <span class="game-status status-locked">COMING SOON</span>
+            </div>
+
+            <div class="game-card locked">
+                <span class="game-icon">⚖️</span>
+                <div class="game-title">THE DILEMMA</div>
+                <span class="game-status status-locked">COMING SOON</span>
+            </div>
+
+            <div class="game-card locked">
+                <span class="game-icon">🌫️</span>
+                <div class="game-title">THE UNCERTAIN PATH</div>
+                <span class="game-status status-locked">COMING SOON</span>
+            </div>
+        </div>
+
+        <p class="coin-insert">INSERT COIN TO CONTINUE</p>
+
+        <div class="footer">
+            <p>&copy; 2026 ABOUT YOU &mdash; ALL RIGHTS RESERVED</p>
+        </div>
+    </div>
+</body>
+</html>
