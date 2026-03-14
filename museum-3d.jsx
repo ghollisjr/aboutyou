@@ -1403,7 +1403,7 @@ const WanderingMuseum = ({ onComplete }) => {
             fontFamily: 'system-ui, sans-serif'
           }}>
             <h2 style={{ fontSize: '2rem', fontWeight: '300', marginBottom: '20px' }}>
-              the wandering museum
+              museum
             </h2>
             <p style={{ opacity: 0.7, marginBottom: '30px', lineHeight: '1.6' }}>
               {isMobile 

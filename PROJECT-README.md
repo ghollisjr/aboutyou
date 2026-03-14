@@ -28,7 +28,7 @@ personality/                        # Repo root
 ├── vite.config.js                  # Vite config (multi-page, base: /aboutyou/)
 ├── package.json                    # npm scripts: dev, build, preview
 ├── .gitignore                      # node_modules/, dist/
-├── wandering-museum-3d.jsx         # Game 1: Openness component (COMPLETE)
+├── museum-3d.jsx         # Game 1: Openness component (COMPLETE)
 ├── src/
 │   ├── museum-main.jsx             # Entry point for museum game
 │   └── museum-main.css             # Reset styles for museum game
@@ -128,7 +128,7 @@ if (completionMethod === 'sober') {
 - Circles rendered on top with glow
 
 ### Files
-- `wandering-museum-3d.jsx` - Component source (single source of truth)
+- `museum-3d.jsx` - Component source (single source of truth)
 - `src/museum-main.jsx` - Entry point (imports component, renders App)
 - `games/museum.html` - HTML shell
 

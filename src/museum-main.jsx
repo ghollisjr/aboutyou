@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import WanderingMuseum from '../wandering-museum-3d.jsx';
+import WanderingMuseum from '../museum-3d.jsx';
 import './museum-main.css';
 
 function App() {

@@ -59,7 +59,7 @@ TECHNICAL SETUP:
 - Dev server: npm run dev (Vite)
 
 FILES TO REFERENCE:
-- wandering-museum-3d.jsx (example of completed game component)
+- museum-3d.jsx (example of completed game component)
 - src/museum-main.jsx (example entry point)
 - games/museum.html (example HTML shell)
 - vite.config.js (build configuration)
@@ -74,6 +74,6 @@ Game 2 for [Conscientiousness/Extraversion/Agreeableness/Neuroticism].
 then upload these files:
 
 [[file:PROJECT-README.md]]
-[[file:wandering-museum-3d.jsx]]
+[[file:museum-3d.jsx]]
 [[file:src/museum-main.jsx]]
 [[file:vite.config.js]]
