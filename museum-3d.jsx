@@ -712,26 +712,25 @@ const WanderingMuseum = ({ onComplete }) => {
     buttonLight.position.y = 1.2;
     tableGroup.add(buttonLight);
     
-    // "trip balls" text label using canvas texture
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.font = 'bold 24px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('trip balls', 128, 40);
-    
-    const labelTexture = new THREE.CanvasTexture(canvas);
-    const labelMaterial = new THREE.MeshBasicMaterial({ 
-      map: labelTexture, 
-      transparent: true,
-      side: THREE.DoubleSide
+    // "trip balls" name plate (same style as pedestal labels)
+    const btnLabelCanvas = document.createElement('canvas');
+    btnLabelCanvas.width = 256;
+    btnLabelCanvas.height = 64;
+    const btnLabelCtx = btnLabelCanvas.getContext('2d');
+    btnLabelCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    btnLabelCtx.fillRect(0, 0, 256, 64);
+    btnLabelCtx.fillStyle = '#ffffff';
+    btnLabelCtx.font = 'bold 20px system-ui';
+    btnLabelCtx.textAlign = 'center';
+    btnLabelCtx.fillText('trip balls', 128, 40);
+
+    const btnLabelTexture = new THREE.CanvasTexture(btnLabelCanvas);
+    const btnLabelMaterial = new THREE.MeshBasicMaterial({
+      map: btnLabelTexture,
+      transparent: true
     });
-    const labelGeometry = new THREE.PlaneGeometry(2, 0.5);
-    const label = new THREE.Mesh(labelGeometry, labelMaterial);
-    label.position.y = 2;
-    label.rotation.x = -Math.PI / 4; // Tilt down slightly
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), btnLabelMaterial);
+    label.position.set(0, 0.5, 0.78);
     tableGroup.add(label);
     
     // Pulsing animation for button
