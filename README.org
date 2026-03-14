@@ -1,25 +1,48 @@
 * README
-This project uses JSX files. To test out the games:
+This project uses Vite + React to build interactive 3D personality
+assessment games. The repo deploys to GitHub Pages at
+=https://<user>.github.io/aboutyou/=.
 
-1. Start server: python server.py
-2. Open in browser: http://localhost:8000/game-test-harness.html
+** Quick Start
 
-To add more games, I think I need to edit the game-test-harness.html
-file.
+#+begin_src bash
+npm install
+npm run dev
+#+end_src
 
-For the final app, it probably needs to integrate all these JSX files
-somehow. Not sure yet.
-* PROMPT FOR CLAUDE
-I'm building a Big Five personality assessment using 5 interactive 3D games. I've completed the first game (Wandering Museum for Openness). I need help creating the remaining 4 games.
+Open the localhost URL shown by Vite. The retro arcade menu lets you
+select a game.
+
+** Build & Preview
+
+#+begin_src bash
+npm run build     # produces dist/
+npm run preview   # serve built output locally
+#+end_src
+
+** Deployment
+Pushing to =main= triggers the GitHub Actions workflow
+(=.github/workflows/deploy.yml=), which builds and deploys to GitHub
+Pages automatically.
+
+** Adding a New Game
+1. Create =new-game.jsx= component (with =export default=)
+2. Create =src/new-game-main.jsx= entry point (imports component, renders into =#root=)
+3. Create =games/new-game.html= shell (=<div id="root">= + =<script type="module">=)
+4. Add to =vite.config.js= rollup inputs
+5. Update =index.html= card from "Coming Soon" to playable
+
+** PROMPT FOR CLAUDE
+I'm building a Big Five personality assessment using 5 interactive 3D games. I've completed the first game (Museum for Openness). I need help creating the remaining 4 games.
 
 CONTEXT:
-- Using React + Three.js for 3D games
+- Using Vite + React + Three.js
 - Each game measures one Big Five trait through gameplay mechanics
 - Games should be engaging, non-obvious personality tests
-- Final output: standalone HTML files for Webflow embedding
+- Deployed to GitHub Pages via GitHub Actions
 
 COMPLETED:
-1. Wandering Museum (Openness) - 3D exploration game with psychedelic trip mode
+1. Museum (Openness) - 3D exploration game with psychedelic trip mode
 
 NEED TO BUILD:
 2. Game for Conscientiousness (planning, organization, resource management)
@@ -28,19 +51,21 @@ NEED TO BUILD:
 5. Game for Neuroticism (stress response, anxiety under pressure)
 
 TECHNICAL SETUP:
-- Test harness: game-test-harness.html (loads JSX files dynamically)
-- Server: server.py (Python HTTP server with correct MIME types)
-- Format: React components in .jsx files (no export statement)
-- Output: Standalone .html files for each game
+- Build: Vite with @vitejs/plugin-react
+- Components: React .jsx files with ES module exports
+- Entry points: src/<game>-main.jsx imports component and renders
+- HTML shells: games/<game>.html with <script type="module">
+- Dev server: npm run dev (Vite)
 
 FILES TO REFERENCE:
-[Upload these files from this conversation]:
-- wandering-museum-3d-no-export.jsx (example of completed game)
-- game-test-harness.html (for testing new games)
-- server.py (local development server)
+- wandering-museum-3d.jsx (example of completed game component)
+- src/museum-main.jsx (example entry point)
+- games/museum.html (example HTML shell)
+- vite.config.js (build configuration)
 
 Can you help me design the next game for [choose trait]?
-* ALT PROMPT FOR CLAUDE
+
+** ALT PROMPT FOR CLAUDE
 I'm continuing the Big Five personality assessment project. I've
 uploaded the README and completed Game 1 (Openness). Help me build
 Game 2 for [Conscientiousness/Extraversion/Agreeableness/Neuroticism].
@@ -48,6 +73,6 @@ Game 2 for [Conscientiousness/Extraversion/Agreeableness/Neuroticism].
 then upload these files:
 
 [[file:PROJECT-README.md]]
-[[file:wandering-museum-3d-no-export.jsx]]
-[[file:game-test-harness.html]]
-[[file:server.py]]
+[[file:wandering-museum-3d.jsx]]
+[[file:src/museum-main.jsx]]
+[[file:vite.config.js]]

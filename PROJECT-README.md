@@ -8,31 +8,42 @@ A personality assessment system using 5 interactive 3D games to measure the Big 
 
 - **Non-obvious assessment**: Players shouldn't realize they're being tested
 - **Engaging gameplay**: Fun, artistic, interactive experiences
-- **Webflow integration**: Embeddable via iframe in Webflow pages
+- **GitHub Pages deployment**: Built with Vite, deployed via GitHub Actions
 - **Accurate scoring**: Each game outputs a 0-1 score for its trait
 
 ## Tech Stack
 
-- **React 18** (via CDN)
-- **Three.js 0.150** (3D graphics)
-- **Babel Standalone** (JSX transformation in browser)
-- **No build process** (runs directly in browser)
+- **Vite** (build tool with `@vitejs/plugin-react`)
+- **React 19** (via npm)
+- **Three.js** (3D graphics)
+- **GitHub Actions** (CI/CD to GitHub Pages)
 
 ## Project Structure
 
 ```
-├── game-test-harness.html      # Development test harness
-├── server.py                    # Local dev server with CORS/MIME types
-├── wandering-museum-3d-no-export.jsx  # Game 1: Openness (COMPLETE)
-├── museum-standalone.html       # Standalone version of Game 1
-└── [4 more games to build]
+personality/                        # Repo root
+├── index.html                      # Level-select menu (retro arcade)
+├── vite.config.js                  # Vite config (multi-page, base: /aboutyou/)
+├── package.json                    # npm scripts: dev, build, preview
+├── .gitignore                      # node_modules/, dist/
+├── wandering-museum-3d.jsx         # Game 1: Openness component (COMPLETE)
+├── src/
+│   ├── museum-main.jsx             # Entry point for museum game
+│   └── museum-main.css             # Reset styles for museum game
+├── games/
+│   └── museum.html                 # HTML shell for museum game
+├── .github/
+│   └── workflows/
+│       └── deploy.yml              # GitHub Actions Pages deployment
+├── PROJECT-README.md               # This file
+└── README.org                      # Quick-start and prompts
 ```
 
 ## Game Design Philosophy
 
 Each game measures personality through **behavior**, not questions:
 
-1. **Openness** (✅ COMPLETE): Exploration, curiosity, novelty-seeking
+1. **Openness** (COMPLETE): Exploration, curiosity, novelty-seeking
 2. **Conscientiousness** (TODO): Planning, organization, delayed gratification
 3. **Extraversion** (TODO): Social engagement, energy, stimulation preference
 4. **Agreeableness** (TODO): Cooperation, fairness, compassion
@@ -40,7 +51,7 @@ Each game measures personality through **behavior**, not questions:
 
 ---
 
-## GAME 1: WANDERING MUSEUM (Openness) ✅
+## GAME 1: MUSEUM (Openness)
 
 ### Concept
 Explore a 3D art gallery. Find art pieces, discover hidden areas, and optionally press a "trip balls" button for a psychedelic challenge.
@@ -114,15 +125,10 @@ if (completionMethod === 'sober') {
 - Time-based animation (elapsed seconds since trip start)
 - Circles rendered on top with glow
 
-**Important Fixes:**
-- Use `performance.now()` not `Date.now()` for time
-- Remove `export default` for browser compatibility
-- No `file://` loading - must use HTTP server
-- Custom Python server sets correct MIME types for .jsx
-
 ### Files
-- `wandering-museum-3d-no-export.jsx` - Component source
-- `museum-standalone.html` - Standalone embeddable version
+- `wandering-museum-3d.jsx` - Component source (single source of truth)
+- `src/museum-main.jsx` - Entry point (imports component, renders App)
+- `games/museum.html` - HTML shell
 
 ---
 
@@ -130,38 +136,37 @@ if (completionMethod === 'sober') {
 
 ### 1. Local Development
 
-Start the custom Python server:
 ```bash
-python3 server.py
-# Server runs on http://localhost:8000
+npm install       # First time only
+npm run dev       # Start Vite dev server
 ```
 
-### 2. Testing with Harness
+Open the localhost URL shown by Vite. Hot module replacement is enabled.
 
-Open `game-test-harness.html` in browser:
-- Select game from dropdown
-- Click "Load Game"
-- Play through and test
-- Results display on completion
+### 2. Building for Production
 
-### 3. Create Standalone Version
-
-When game is complete, create standalone HTML:
 ```bash
-# Combine component into single HTML file
-# (See museum-standalone.html as template)
+npm run build     # Output to dist/
+npm run preview   # Preview built output locally
 ```
 
-### 4. Deploy to Webflow
+### 3. Deployment
 
-Upload standalone HTML to hosting (GitHub Pages, Netlify, etc.)
+Push to `main` branch. The GitHub Actions workflow (`.github/workflows/deploy.yml`) automatically:
+1. Checks out the code
+2. Installs dependencies (`npm ci`)
+3. Builds (`npm run build`)
+4. Deploys `dist/` to GitHub Pages
 
-Embed in Webflow:
+Live URL: `https://<user>.github.io/aboutyou/`
+
+### 4. Embedding in Webflow
+
 ```html
-<iframe 
-    src="https://your-url.com/game.html" 
-    width="100%" 
-    height="800px" 
+<iframe
+    src="https://<user>.github.io/aboutyou/games/museum.html"
+    width="100%"
+    height="800px"
     frameborder="0"
     allow="gamepad">
 </iframe>
@@ -189,7 +194,7 @@ All games must implement this interface:
 ```javascript
 const GameComponent = ({ onComplete }) => {
     // Game logic here
-    
+
     const handleFinish = () => {
         onComplete({
             traitScore: 0.75,           // 0.0 to 1.0
@@ -198,15 +203,18 @@ const GameComponent = ({ onComplete }) => {
             completionRatio: 1.0         // 0.0 to 1.0
         });
     };
-    
+
     return (/* JSX */);
 };
+
+export default GameComponent;
 ```
 
 **Required:**
 - Accept `onComplete` prop (function)
 - Call `onComplete(results)` when game finishes
 - Return score between 0.0 and 1.0
+- Use `export default` (Vite handles module bundling)
 
 **Results Object:**
 ```javascript
@@ -238,16 +246,6 @@ tripShaderMaterial.uniforms.time.value = elapsedSeconds;
 
 // In shader, use directly (time is in seconds)
 float animation = sin(uv.x * 10.0 + time * 2.0);
-```
-
-### Browser Compatibility
-```javascript
-// Remove exports for browser use
-// REMOVE: export default Component;
-// REMOVE: import React from 'react';
-
-// Instead rely on CDN globals
-const { useState, useEffect } = React;
 ```
 
 ### Three.js Camera Setup
@@ -284,7 +282,7 @@ function checkCollision(x, z, radius = 0.5) {
 
 ## Next Games To Build
 
-### Game 2: The Builder (Conscientiousness)
+### Game 2: Builder (Conscientiousness)
 **Concept:** Resource management and planning
 
 **Possible Mechanics:**
@@ -294,13 +292,13 @@ function checkCollision(x, z, radius = 0.5) {
 - Organization of inventory/workspace
 - Time pressure vs. careful planning
 
-**Scoring:** 
+**Scoring:**
 - High: Efficient planning, delayed gratification, organized approach
 - Low: Impulsive actions, poor resource management, disorganized
 
 ---
 
-### Game 3: The Gathering (Extraversion)
+### Game 3: Gathering (Extraversion)
 **Concept:** Social scenario simulation
 
 **Possible Mechanics:**
@@ -316,7 +314,7 @@ function checkCollision(x, z, radius = 0.5) {
 
 ---
 
-### Game 4: The Dilemma (Agreeableness)
+### Game 4: Dilemma (Agreeableness)
 **Concept:** Ethical choices and cooperation
 
 **Possible Mechanics:**
@@ -332,7 +330,7 @@ function checkCollision(x, z, radius = 0.5) {
 
 ---
 
-### Game 5: The Uncertain Path (Neuroticism)
+### Game 5: Uncertainty (Neuroticism)
 **Concept:** Stress and ambiguity management
 
 **Possible Mechanics:**
@@ -348,57 +346,86 @@ function checkCollision(x, z, radius = 0.5) {
 
 ---
 
+## Adding a New Game
+
+1. Create `new-game.jsx` component at repo root (with `export default`)
+2. Create `src/new-game-main.jsx` entry point:
+   ```jsx
+   import React from 'react';
+   import ReactDOM from 'react-dom/client';
+   import NewGame from '../new-game.jsx';
+   import './new-game-main.css';
+
+   function App() {
+     const handleComplete = (results) => {
+       console.log('Game completed!', results);
+       if (window.parent !== window) {
+         window.parent.postMessage({ type: 'GAME_COMPLETE', data: results }, '*');
+       }
+     };
+     return <NewGame onComplete={handleComplete} />;
+   }
+
+   ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+   ```
+3. Create `games/new-game.html` shell:
+   ```html
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+       <meta charset="UTF-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       <title>New Game</title>
+   </head>
+   <body>
+       <div id="root"></div>
+       <script type="module" src="../src/new-game-main.jsx"></script>
+   </body>
+   </html>
+   ```
+4. Add to `vite.config.js` rollup inputs:
+   ```js
+   input: {
+     main: resolve(__dirname, 'index.html'),
+     museum: resolve(__dirname, 'games/museum.html'),
+     newgame: resolve(__dirname, 'games/new-game.html'),
+   }
+   ```
+5. Update `index.html` card from "Coming Soon" to playable (add `<a href>` link)
+
+---
+
+## Project Status
+
+- [x] Game 1: Museum (Openness)
+- [ ] Game 2: Builder (Conscientiousness)
+- [ ] Game 3: Gathering (Extraversion)
+- [ ] Game 4: Dilemma (Agreeableness)
+- [ ] Game 5: Uncertainty (Neuroticism)
+- [ ] Integration: Combined assessment flow
+- [ ] Results: Similarity scoring vs. artist benchmark
+
+---
+
 ## Troubleshooting
 
-### Port Already in Use
+### Vite Dev Server Issues
 ```bash
-# Kill process on port 8000
-lsof -ti:8000 | xargs kill -9
+# Kill process on default port
+lsof -ti:5173 | xargs kill -9
 
-# Or use different port in server.py
-PORT = 8001
+# Or specify a different port
+npm run dev -- --port 3000
 ```
 
-### MIME Type Errors
-```
-Error: Disallowed MIME type "application/octet-stream"
-```
-**Solution:** Use the custom `server.py` which sets correct MIME types for .jsx files
-
-### Export Errors
-```
-Error: exports is not defined
-```
-**Solution:** Remove `export default` from .jsx files (use -no-export versions)
-
-### CORS Errors
-```
-Error: CORS request not http
-```
-**Solution:** Must use HTTP server, cannot use `file://` protocol
-
-### Shader Shows Gray
-**Common causes:**
-1. Time value too large (use `performance.now()` not `Date.now()`)
-2. Intensity not ramping up (check shader is being applied)
-3. UV mapping issue (test with simple `vec3(uv.x, uv.y, 0.5)`)
+### Build Chunk Size Warning
+Three.js produces a large bundle (~727KB). This is expected. To reduce:
+- Use dynamic `import()` to code-split Three.js
+- Adjust `build.chunkSizeWarningLimit` in `vite.config.js`
 
 ---
 
 ## Resources
-
-### CDN Links Used
-```html
-<!-- React -->
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-<!-- Three.js -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-
-<!-- Babel (for JSX transformation) -->
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-```
 
 ### Useful Three.js Patterns
 - Raycasting: Detect clicks on 3D objects
@@ -409,39 +436,14 @@ Error: CORS request not http
 
 ---
 
-## Project Status
-
-- [x] Game 1: Wandering Museum (Openness)
-- [ ] Game 2: The Builder (Conscientiousness)
-- [ ] Game 3: The Gathering (Extraversion)
-- [ ] Game 4: The Dilemma (Agreeableness)
-- [ ] Game 5: The Uncertain Path (Neuroticism)
-- [ ] Integration: Combined assessment flow
-- [ ] Results: Similarity scoring vs. artist benchmark
-
----
-
-## Quick Start for New Game
-
-1. Copy `wandering-museum-3d-no-export.jsx` as template
-2. Modify game mechanics for your trait
-3. Update scoring algorithm
-4. Test with `game-test-harness.html`
-5. Create standalone HTML when complete
-6. Deploy and embed in Webflow
-
----
-
 ## Contact / Notes
 
 This is an experimental art project measuring personality through interactive gameplay.
 
-**Key Insight:** Wandering Museum showed that complex 3D environments work well, but simpler mechanics might be better for remaining games to avoid fatigue.
+**Key Insight:** Museum showed that complex 3D environments work well, but simpler mechanics might be better for remaining games to avoid fatigue.
 
-**Learned:** 
+**Learned:**
 - Orthographic camera creates unique "all visible at once" effect
 - Shader effects must be carefully tuned (time units, intensity)
 - Multi-platform input is essential (desktop, mobile, gamepad)
 - Flying controls feel more "trippy" than walking on ground
-
-Good luck building the remaining games! 🎮✨
