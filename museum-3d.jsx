@@ -138,7 +138,7 @@ const WanderingMuseum = ({ onComplete }) => {
     return geometry;
   }
 
-  function createTeapot(scale = 1) {
+  function createTeapot(scale = 1, material = null) {
     const group = new THREE.Group();
 
     // Lathe body - teapot silhouette profile
@@ -169,7 +169,7 @@ const WanderingMuseum = ({ onComplete }) => {
     ];
     profile.forEach(p => { p.x *= scale; p.y *= scale; });
 
-    const bodyMaterial = new THREE.MeshStandardMaterial({
+    const bodyMaterial = material || new THREE.MeshStandardMaterial({
       color: 0xeeeeff,
       roughness: 0.2,
       metalness: 0.6
@@ -292,19 +292,67 @@ const WanderingMuseum = ({ onComplete }) => {
     pointLight5.position.set(-10, 5, 10);
     scene.add(pointLight5);
 
-    // Floor
+    // --- Procedural floor texture: polished stone tiles ---
+    const floorTexSize = 512;
+    const floorCanvas = document.createElement('canvas');
+    floorCanvas.width = floorTexSize;
+    floorCanvas.height = floorTexSize;
+    const floorCtx = floorCanvas.getContext('2d');
+    const tileCount = 8; // 8x8 grid of tiles
+    const tileSize = floorTexSize / tileCount;
+    const groutWidth = 3;
+    // Grout color
+    floorCtx.fillStyle = '#1a1a28';
+    floorCtx.fillRect(0, 0, floorTexSize, floorTexSize);
+    // Draw tiles with subtle color variation
+    for (let ty = 0; ty < tileCount; ty++) {
+      for (let tx = 0; tx < tileCount; tx++) {
+        const variation = Math.floor(Math.random() * 12) - 6;
+        const base = 42 + variation;
+        const r = base, g = base, b = base + 8;
+        floorCtx.fillStyle = `rgb(${r},${g},${b})`;
+        floorCtx.fillRect(
+          tx * tileSize + groutWidth, ty * tileSize + groutWidth,
+          tileSize - groutWidth * 2, tileSize - groutWidth * 2
+        );
+        // Subtle diagonal marble vein on some tiles
+        if (Math.random() > 0.6) {
+          floorCtx.save();
+          floorCtx.globalAlpha = 0.08;
+          floorCtx.strokeStyle = '#aaaacc';
+          floorCtx.lineWidth = 1 + Math.random() * 2;
+          floorCtx.beginPath();
+          const x0 = tx * tileSize + groutWidth;
+          const y0 = ty * tileSize + groutWidth;
+          const w = tileSize - groutWidth * 2;
+          floorCtx.moveTo(x0 + Math.random() * w * 0.3, y0);
+          floorCtx.bezierCurveTo(
+            x0 + w * 0.4, y0 + w * 0.5,
+            x0 + w * 0.6, y0 + w * 0.5,
+            x0 + w, y0 + w * (0.7 + Math.random() * 0.3)
+          );
+          floorCtx.stroke();
+          floorCtx.restore();
+        }
+      }
+    }
+    const floorTexture = new THREE.CanvasTexture(floorCanvas);
+    floorTexture.wrapS = THREE.RepeatWrapping;
+    floorTexture.wrapT = THREE.RepeatWrapping;
+    floorTexture.repeat.set(5, 5); // 5 repetitions across 40 units = tiles feel ~1m each
+
     const floorGeometry = new THREE.PlaneGeometry(40, 40);
-    const floorMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x2a2a3a,
-      roughness: 0.8,
-      metalness: 0.2
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      map: floorTexture,
+      roughness: 0.4,
+      metalness: 0.15
     });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
     // Debug: Visual indicator for exit zone (3D box in center of space)
-    const exitZoneGeometry = new THREE.BoxGeometry(4, 10, 30); // Box: 4 wide, 10 tall, 30 deep
+    const exitZoneGeometry = new THREE.BoxGeometry(4, 10, 30);
     const exitZoneMaterial = new THREE.MeshBasicMaterial({
       color: 0x00ff00,
       transparent: true,
@@ -313,13 +361,65 @@ const WanderingMuseum = ({ onComplete }) => {
       wireframe: true
     });
     const exitZone = new THREE.Mesh(exitZoneGeometry, exitZoneMaterial);
-    exitZone.position.set(0, 5, 0); // Center in vertical space
+    exitZone.position.set(0, 5, 0);
     scene.add(exitZone);
 
+    // Ceiling - dark plane overhead to contain light
+    const ceilingGeometry = new THREE.PlaneGeometry(40, 40);
+    const ceilingMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1e1e2e,
+      roughness: 0.95,
+      metalness: 0.0
+    });
+    const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = 6;
+    scene.add(ceiling);
+
+    // --- Procedural wall texture: vertical panels with baseboard ---
+    const wallTexW = 512, wallTexH = 256;
+    const wallCanvas = document.createElement('canvas');
+    wallCanvas.width = wallTexW;
+    wallCanvas.height = wallTexH;
+    const wallCtx = wallCanvas.getContext('2d');
+    // Base wall color (warm dark gray)
+    wallCtx.fillStyle = '#3d3d4e';
+    wallCtx.fillRect(0, 0, wallTexW, wallTexH);
+    // Vertical panel dividers
+    const panelCount = 6;
+    const panelW = wallTexW / panelCount;
+    for (let p = 0; p < panelCount; p++) {
+      // Slight per-panel color variation
+      const v = Math.floor(Math.random() * 6) - 3;
+      const pb = 61 + v;
+      wallCtx.fillStyle = `rgb(${pb},${pb},${pb + 10})`;
+      wallCtx.fillRect(p * panelW + 2, 4, panelW - 4, wallTexH - 30);
+      // Thin trim line between panels
+      wallCtx.fillStyle = '#2a2a38';
+      wallCtx.fillRect(p * panelW, 0, 2, wallTexH);
+    }
+    // Baseboard strip at bottom
+    wallCtx.fillStyle = '#252530';
+    wallCtx.fillRect(0, wallTexH - 26, wallTexW, 26);
+    // Baseboard top edge highlight
+    wallCtx.fillStyle = '#4a4a5a';
+    wallCtx.fillRect(0, wallTexH - 28, wallTexW, 2);
+    // Crown molding at top
+    wallCtx.fillStyle = '#4a4a5a';
+    wallCtx.fillRect(0, 0, wallTexW, 3);
+    wallCtx.fillStyle = '#2a2a38';
+    wallCtx.fillRect(0, 3, wallTexW, 1);
+
+    const wallTexture = new THREE.CanvasTexture(wallCanvas);
+    wallTexture.wrapS = THREE.RepeatWrapping;
+    wallTexture.wrapT = THREE.ClampToEdgeWrapping;
+    wallTexture.repeat.set(4, 1); // 4 panel groups across each wall face
+
     // Walls to create gallery rooms
-    const wallMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x3a3a4a,
-      roughness: 0.9,
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      map: wallTexture,
+      roughness: 0.85,
+      metalness: 0.05,
       transparent: true,
       opacity: 1.0
     });
@@ -362,6 +462,34 @@ const WanderingMuseum = ({ onComplete }) => {
     const hiddenRoomGlow = new THREE.PointLight(0xffaa44, 2.0, 25);
     hiddenRoomGlow.position.set(0, 3, -14);
     scene.add(hiddenRoomGlow);
+
+    // Procedural environment map for reflective surfaces (reveals curvature on smooth shapes)
+    const envSize = 128;
+    const envCanvas = document.createElement('canvas');
+    envCanvas.width = envSize;
+    envCanvas.height = envSize;
+    const envCtx = envCanvas.getContext('2d');
+    // Gradient from dark bottom to bright top with warm/cool tones
+    const envGrad = envCtx.createLinearGradient(0, envSize, 0, 0);
+    envGrad.addColorStop(0, '#1a1a2e');
+    envGrad.addColorStop(0.3, '#2a2a4a');
+    envGrad.addColorStop(0.5, '#4a4a6a');
+    envGrad.addColorStop(0.7, '#8888aa');
+    envGrad.addColorStop(0.85, '#bbbbdd');
+    envGrad.addColorStop(1.0, '#ffffff');
+    envCtx.fillStyle = envGrad;
+    envCtx.fillRect(0, 0, envSize, envSize);
+    // Add some horizontal streaks for more visible reflections
+    envCtx.globalAlpha = 0.15;
+    for (let i = 0; i < 8; i++) {
+      const y = Math.random() * envSize;
+      envCtx.fillStyle = i % 2 === 0 ? '#ffffff' : '#aaccff';
+      envCtx.fillRect(0, y, envSize, 2 + Math.random() * 4);
+    }
+    envCtx.globalAlpha = 1.0;
+    const envTexture = new THREE.CanvasTexture(envCanvas);
+    envTexture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = envTexture;
 
     // Art pieces - mathematical sculptures on pedestals
     const artPieces = [];
@@ -419,15 +547,23 @@ const WanderingMuseum = ({ onComplete }) => {
       return group;
     };
 
-    // --- 1. Utah Teapot ---
-    const teapotMesh = createTeapot(0.7);
+    // --- 1. Utah Teapot (smooth → envMap) ---
+    const teapotMaterial = new THREE.MeshStandardMaterial({
+      color: 0xeeeeff,
+      roughness: 0.15,
+      metalness: 0.7,
+      envMap: envTexture,
+      envMapIntensity: 1.0
+    });
+    const teapotMesh = createTeapot(0.7, teapotMaterial);
     const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-8, 0, -5));
     scene.add(teapotPedestal);
     artPieces.push({ mesh: teapotPedestal, artMesh: teapotMesh, id: 'teapot', examined: false, rotatable: true });
 
-    // --- 2. Icosahedron ---
+    // --- 2. Icosahedron (faceted → edge lines) ---
+    const icoGeom = new THREE.IcosahedronGeometry(1.0);
     const icoMesh = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.0),
+      icoGeom,
       new THREE.MeshStandardMaterial({
         color: 0x4488ff,
         transparent: true,
@@ -435,29 +571,45 @@ const WanderingMuseum = ({ onComplete }) => {
         emissive: 0x224488,
         emissiveIntensity: 0.4,
         roughness: 0.2,
-        metalness: 0.5
+        metalness: 0.5,
+        envMap: envTexture,
+        envMapIntensity: 0.5
       })
     );
+    // Edge lines for faceted shape
+    const icoEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(icoGeom),
+      new THREE.LineBasicMaterial({ color: 0xaaddff, linewidth: 1 })
+    );
+    icoMesh.add(icoEdges);
     const icoPedestal = createPedestal('Icosahedron', icoMesh, new THREE.Vector3(8, 0, -5));
     scene.add(icoPedestal);
     artPieces.push({ mesh: icoPedestal, artMesh: icoMesh, id: 'icosahedron', examined: false, rotatable: true });
 
-    // --- 3. Dodecahedron ---
+    // --- 3. Dodecahedron (faceted → edge lines) ---
+    const dodecGeom = new THREE.DodecahedronGeometry(1.0);
     const dodecMesh = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(1.0),
+      dodecGeom,
       new THREE.MeshStandardMaterial({
         color: 0x22cc88,
         roughness: 0.3,
         metalness: 0.8,
         emissive: 0x114422,
-        emissiveIntensity: 0.2
+        emissiveIntensity: 0.2,
+        envMap: envTexture,
+        envMapIntensity: 0.5
       })
     );
+    const dodecEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(dodecGeom),
+      new THREE.LineBasicMaterial({ color: 0x88ffcc, linewidth: 1 })
+    );
+    dodecMesh.add(dodecEdges);
     const dodecPedestal = createPedestal('Dodecahedron', dodecMesh, new THREE.Vector3(-10, 0, 5));
     scene.add(dodecPedestal);
     artPieces.push({ mesh: dodecPedestal, artMesh: dodecMesh, id: 'dodecahedron', examined: false, rotatable: true });
 
-    // --- 4. Möbius Strip ---
+    // --- 4. Möbius Strip (smooth → envMap) ---
     const mobiusGeometry = createMobiusStrip(1.0, 0.4, 100);
     const mobiusMesh = new THREE.Mesh(
       mobiusGeometry,
@@ -465,16 +617,18 @@ const WanderingMuseum = ({ onComplete }) => {
         color: 0xaa66ff,
         emissive: 0x552288,
         emissiveIntensity: 0.3,
-        roughness: 0.3,
-        metalness: 0.6,
-        side: THREE.DoubleSide
+        roughness: 0.2,
+        metalness: 0.7,
+        side: THREE.DoubleSide,
+        envMap: envTexture,
+        envMapIntensity: 0.8
       })
     );
     const mobiusPedestal = createPedestal('Möbius Strip', mobiusMesh, new THREE.Vector3(10, 0, 5));
     scene.add(mobiusPedestal);
     artPieces.push({ mesh: mobiusPedestal, artMesh: mobiusMesh, id: 'mobius', examined: false, rotatable: true });
 
-    // --- 5. Klein Bottle (hidden room) ---
+    // --- 5. Klein Bottle (smooth → envMap, hidden room) ---
     const kleinGeometry = createKleinBottle(0.4, 60, 30);
     const kleinMesh = new THREE.Mesh(
       kleinGeometry,
@@ -484,22 +638,26 @@ const WanderingMuseum = ({ onComplete }) => {
         emissiveIntensity: 0.5,
         transparent: true,
         opacity: 0.8,
-        roughness: 0.2,
-        metalness: 0.4,
-        side: THREE.DoubleSide
+        roughness: 0.15,
+        metalness: 0.5,
+        side: THREE.DoubleSide,
+        envMap: envTexture,
+        envMapIntensity: 0.8
       })
     );
     const kleinPedestal = createPedestal('Klein Bottle', kleinMesh, new THREE.Vector3(0, 0, -15));
     scene.add(kleinPedestal);
     artPieces.push({ mesh: kleinPedestal, artMesh: kleinMesh, id: 'klein', examined: false, rotatable: true, isHidden: true });
 
-    // --- 6. Torus Knot ---
+    // --- 6. Torus Knot (smooth → envMap, chrome) ---
     const torusKnotMesh = new THREE.Mesh(
       new THREE.TorusKnotGeometry(0.8, 0.25, 128, 32, 3, 2),
       new THREE.MeshStandardMaterial({
         color: 0xcccccc,
-        roughness: 0.1,
-        metalness: 0.95
+        roughness: 0.05,
+        metalness: 0.95,
+        envMap: envTexture,
+        envMapIntensity: 1.2
       })
     );
     const torusKnotPedestal = createPedestal('Torus Knot', torusKnotMesh, new THREE.Vector3(0, 0, 8));
@@ -1403,13 +1561,14 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Animate trip portal and alignment circles (only visible when tripping)
       if (trippingRef.current) {
-        // Hide walls completely when tripping
+        // Hide walls and ceiling completely when tripping
         outerWalls.forEach(wall => wall.visible = false);
-        
+        ceiling.visible = false;
+
         // Hide interior walls completely (they block the circles)
         interiorWall1.visible = false;
         interiorWall2.visible = false;
-        
+
         // Hide floor
         floor.visible = false;
         
@@ -1507,13 +1666,14 @@ const WanderingMuseum = ({ onComplete }) => {
         portalMesh.rotation.y += 0.02;
         portalMesh.rotation.x += 0.01;
       } else {
-        // Show walls when not tripping
+        // Show walls, ceiling when not tripping
         outerWalls.forEach(wall => wall.visible = true);
-        
+        ceiling.visible = true;
+
         // Show interior walls
         interiorWall1.visible = true;
         interiorWall2.visible = true;
-        
+
         // Show floor
         floor.visible = true;
         
