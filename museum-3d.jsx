@@ -19,6 +19,11 @@ const WanderingMuseum = ({ onComplete }) => {
   const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
+  const [showFps, setShowFps] = useState(false);
+  const [qualityToast, setQualityToast] = useState(null);
+  const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0 });
+  const fpsDisplayRef = useRef(null);
+  const qualityRef = useRef('high');
   
   // Update ref when state changes
   useEffect(() => {
@@ -378,7 +383,7 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
-  function createTrefoilKnot() {
+  function createTrefoilKnot(tubularSegments = 128, radialSegments = 16) {
     class TrefoilCurve extends THREE.Curve {
       getPoint(t) {
         const s = t * Math.PI * 2;
@@ -390,7 +395,7 @@ const WanderingMuseum = ({ onComplete }) => {
     }
 
     const path = new TrefoilCurve();
-    const geometry = new THREE.TubeGeometry(path, 128, 0.08, 16, true);
+    const geometry = new THREE.TubeGeometry(path, tubularSegments, 0.08, radialSegments, true);
     const material = new THREE.MeshStandardMaterial({
       color: 0x22ccaa,
       roughness: 0.05,
@@ -440,7 +445,7 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
-  function createApollonianGasket() {
+  function createApollonianGasket(maxDepth = 3, minR = 0.04) {
     const group = new THREE.Group();
     // 3D Apollonian gasket: recursively pack tangent spheres
     // Limited depth + deduplication to keep sphere count manageable
@@ -452,7 +457,7 @@ const WanderingMuseum = ({ onComplete }) => {
     }
 
     function addSphere(x, y, z, r, depth) {
-      if (r < 0.04 || depth > 3) return;
+      if (r < minR || depth > maxDepth) return;
       const k = key(x, y, z, r);
       if (placed.has(k)) return;
       placed.add(k);
@@ -619,14 +624,53 @@ const WanderingMuseum = ({ onComplete }) => {
     const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     setIsMobile(mobile);
 
+    // Auto-detect quality level
+    if (mobile || navigator.hardwareConcurrency <= 4) qualityRef.current = 'medium';
+    if (navigator.hardwareConcurrency <= 2) qualityRef.current = 'low';
+
+    const qualitySettings = {
+      high: {
+        sierpinskiLevel: 4, mengerLevel: 3,
+        apollonianMaxDepth: 3, apollonianMinR: 0.04,
+        gyroidResolution: 30, saddleResolution: 20,
+        torusKnotTubular: 128, torusKnotRadial: 32,
+        trefoilTubular: 128, trefoilRadial: 16,
+        kleinU: 60, kleinV: 30,
+        mobiusSegments: 100,
+        wireframes: true, pixelRatio: window.devicePixelRatio, antialias: true
+      },
+      medium: {
+        sierpinskiLevel: 3, mengerLevel: 2,
+        apollonianMaxDepth: 2, apollonianMinR: 0.06,
+        gyroidResolution: 20, saddleResolution: 14,
+        torusKnotTubular: 64, torusKnotRadial: 16,
+        trefoilTubular: 64, trefoilRadial: 8,
+        kleinU: 30, kleinV: 15,
+        mobiusSegments: 50,
+        wireframes: true, pixelRatio: Math.min(window.devicePixelRatio, 1.5), antialias: true
+      },
+      low: {
+        sierpinskiLevel: 2, mengerLevel: 1,
+        apollonianMaxDepth: 1, apollonianMinR: 0.1,
+        gyroidResolution: 12, saddleResolution: 8,
+        torusKnotTubular: 32, torusKnotRadial: 8,
+        trefoilTubular: 32, trefoilRadial: 8,
+        kleinU: 16, kleinV: 10,
+        mobiusSegments: 24,
+        wireframes: false, pixelRatio: 1.0, antialias: false
+      }
+    };
+    const q = qualitySettings[qualityRef.current];
+
     // Three.js setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
     scene.fog = new THREE.Fog(0x1a1a2e, 25, 65);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: q.antialias });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(q.pixelRatio);
     containerRef.current.appendChild(renderer.domElement);
 
     // Post-processing for trip effect
@@ -967,22 +1011,25 @@ const WanderingMuseum = ({ onComplete }) => {
       artMesh.position.y = 1.2 + 1.3; // top of pedestal + offset for art center (clearance for oscillation)
       group.add(artMesh);
 
-      // Add subtle wireframe overlay to all geometry in the art mesh
-      const wireframeMat = new THREE.LineBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.08,
-        depthWrite: false
-      });
-      artMesh.traverse(obj => {
-        if (obj.geometry && obj.isMesh) {
-          const wire = new THREE.LineSegments(
-            new THREE.WireframeGeometry(obj.geometry),
-            wireframeMat
-          );
-          obj.add(wire);
-        }
-      });
+      // Add subtle wireframe overlay to all geometry in the art mesh (skip if low quality)
+      if (q.wireframes) {
+        const wireframeMat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.08,
+          depthWrite: false
+        });
+        artMesh.traverse(obj => {
+          if (obj.geometry && obj.isMesh) {
+            const wire = new THREE.LineSegments(
+              new THREE.WireframeGeometry(obj.geometry),
+              wireframeMat
+            );
+            wire.userData.isQualityWireframe = true;
+            obj.add(wire);
+          }
+        });
+      }
 
       // Invisible interaction volume covering pedestal + art area
       const interactionBox = new THREE.Mesh(
@@ -1060,7 +1107,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: dodecPedestal, artMesh: dodecMesh, id: 'dodecahedron', examined: false, rotatable: true });
 
     // --- 4. Möbius Strip (smooth → envMap) ---
-    const mobiusGeometry = createMobiusStrip(1.0, 0.4, 100);
+    const mobiusGeometry = createMobiusStrip(1.0, 0.4, q.mobiusSegments);
     const mobiusMesh = new THREE.Mesh(
       mobiusGeometry,
       new THREE.MeshStandardMaterial({
@@ -1079,7 +1126,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: mobiusPedestal, artMesh: mobiusMesh, id: 'mobius', examined: false, rotatable: true });
 
     // --- 5. Klein Bottle (smooth → envMap, hidden room) ---
-    const kleinGeometry = createKleinBottle(0.4, 60, 30);
+    const kleinGeometry = createKleinBottle(0.4, q.kleinU, q.kleinV);
     const kleinMesh = new THREE.Mesh(
       kleinGeometry,
       new THREE.MeshStandardMaterial({
@@ -1102,7 +1149,7 @@ const WanderingMuseum = ({ onComplete }) => {
     // --- Maze Art Pieces (beyond back wall, Z < -20) ---
 
     // M1: Sierpinski Tetrahedron — Room 1 west alcove
-    const sierpinskiMesh = createSierpinskiTetrahedron(4, 0.9);
+    const sierpinskiMesh = createSierpinskiTetrahedron(q.sierpinskiLevel, 0.9);
     const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-15, 0, -27.5));
     scene.add(sierpinskiPedestal);
     artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
@@ -1114,7 +1161,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: lorenzPedestal, artMesh: lorenzMesh, id: 'lorenz', examined: false, rotatable: true, isHidden: true });
 
     // M3: Gyroid Surface — main corridor west
-    const gyroidMesh = createGyroid(0.8, 30);
+    const gyroidMesh = createGyroid(0.8, q.gyroidResolution);
     gyroidMesh.material.envMap = envTexture;
     gyroidMesh.material.envMapIntensity = 0.6;
     const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(-6, 0, -27.5));
@@ -1122,7 +1169,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
 
     // M4: Hyperbolic Paraboloid — main corridor east
-    const saddleMesh = createSaddleSurface(0.8, 20);
+    const saddleMesh = createSaddleSurface(0.8, q.saddleResolution);
     const saddlePedestal = createPedestal('Hyperbolic Paraboloid', saddleMesh, new THREE.Vector3(7, 0, -27.5));
     scene.add(saddlePedestal);
     artPieces.push({ mesh: saddlePedestal, artMesh: saddleMesh, id: 'saddle', examined: false, rotatable: true, isHidden: true });
@@ -1134,7 +1181,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: stellaPedestal, artMesh: stellaMesh, id: 'stella', examined: false, rotatable: true, isHidden: true });
 
     // M6: Trefoil Knot — deep west alcove south
-    const trefoilMesh = createTrefoilKnot();
+    const trefoilMesh = createTrefoilKnot(q.trefoilTubular, q.trefoilRadial);
     trefoilMesh.material.envMap = envTexture;
     trefoilMesh.material.envMapIntensity = 1.0;
     const trefoilPedestal = createPedestal('Trefoil Knot', trefoilMesh, new THREE.Vector3(-12, 0, -42));
@@ -1142,7 +1189,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: trefoilPedestal, artMesh: trefoilMesh, id: 'trefoil', examined: false, rotatable: true, isHidden: true });
 
     // M7: Menger Sponge — deep east room
-    const mengerMesh = createMengerSponge(3, 1.2);
+    const mengerMesh = createMengerSponge(q.mengerLevel, 1.2);
     const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(13, 0, -35));
     scene.add(mengerPedestal);
     artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
@@ -1154,14 +1201,14 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
 
     // M9: Apollonian Gasket — center deep passage
-    const apollonianMesh = createApollonianGasket();
+    const apollonianMesh = createApollonianGasket(q.apollonianMaxDepth, q.apollonianMinR);
     const apollonianPedestal = createPedestal('Apollonian Gasket', apollonianMesh, new THREE.Vector3(1, 0, -42));
     scene.add(apollonianPedestal);
     artPieces.push({ mesh: apollonianPedestal, artMesh: apollonianMesh, id: 'apollonian', examined: false, rotatable: true, isHidden: true });
 
     // --- 6. Torus Knot (smooth → envMap, chrome) ---
     const torusKnotMesh = new THREE.Mesh(
-      new THREE.TorusKnotGeometry(0.8, 0.25, 128, 32, 3, 2),
+      new THREE.TorusKnotGeometry(0.8, 0.25, q.torusKnotTubular, q.torusKnotRadial, 3, 2),
       new THREE.MeshStandardMaterial({
         color: 0xcccccc,
         roughness: 0.05,
@@ -1757,8 +1804,11 @@ const WanderingMuseum = ({ onComplete }) => {
     let lookTouch = { active: false, lastX: 0, lastY: 0 };
 
     // Event listeners
-    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
-    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    const onKeyDown = (e) => {
+      keys[e.code] = true;
+      if (e.code === 'KeyF') setShowFps(prev => !prev);
+    };
+    const onKeyUp = (e) => { keys[e.code] = false; };
     
     const onMouseDown = (e) => {
       if (!mobile) {
@@ -1969,6 +2019,11 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     window.addEventListener('resize', onResize);
 
+    // Rolling FPS monitor for auto-downgrade
+    const fpsBuffer = new Float32Array(180); // ~3 seconds at 60fps
+    let fpsBufferIdx = 0;
+    let fpsBufferFilled = false;
+
     // Game loop
     let lastTime = performance.now();
     const animate = () => {
@@ -1976,6 +2031,50 @@ const WanderingMuseum = ({ onComplete }) => {
       const currentTime = performance.now();
       const deltaTime = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
+
+      // FPS counter (update DOM ref directly to avoid re-renders)
+      const fpsData = fpsDataRef.current;
+      if (fpsData.lastTime === 0) fpsData.lastTime = currentTime;
+      fpsData.frames++;
+      if (currentTime - fpsData.lastTime >= 500) {
+        fpsData.value = Math.round(fpsData.frames / ((currentTime - fpsData.lastTime) / 1000));
+        fpsData.frames = 0;
+        fpsData.lastTime = currentTime;
+        if (fpsDisplayRef.current) {
+          fpsDisplayRef.current.textContent = fpsData.value + ' FPS';
+        }
+      }
+
+      // Rolling FPS monitor for auto-downgrade
+      fpsBuffer[fpsBufferIdx] = deltaTime > 0 ? 1 / deltaTime : 60;
+      fpsBufferIdx = (fpsBufferIdx + 1) % fpsBuffer.length;
+      if (fpsBufferIdx === 0) fpsBufferFilled = true;
+
+      if (fpsBufferFilled && qualityRef.current !== 'low') {
+        const count = fpsBuffer.length;
+        let sum = 0;
+        for (let i = 0; i < count; i++) sum += fpsBuffer[i];
+        const avgFps = sum / count;
+
+        if (avgFps < 25) {
+          const prev = qualityRef.current;
+          const next = prev === 'high' ? 'medium' : 'low';
+          qualityRef.current = next;
+          // Runtime adjustments (no geometry rebuild)
+          const nq = qualitySettings[next];
+          renderer.setPixelRatio(nq.pixelRatio);
+          if (!nq.wireframes) {
+            scene.traverse(obj => {
+              if (obj.userData.isQualityWireframe) obj.visible = false;
+            });
+          }
+          setQualityToast('Quality reduced to ' + next);
+          setTimeout(() => setQualityToast(null), 3000);
+          // Reset buffer so we don't immediately trigger again
+          fpsBufferFilled = false;
+          fpsBufferIdx = 0;
+        }
+      }
 
       // Process gamepad input
       if (gamepadIndex !== null) {
@@ -2093,29 +2192,29 @@ const WanderingMuseum = ({ onComplete }) => {
       let moveZ = 0;
 
       // Keyboard movement
-      if (keys['w'] || keys['arrowup']) {
+      if (keys['KeyW'] || keys['ArrowUp']) {
         moveX += forward.x * moveSpeed;
         moveZ += forward.z * moveSpeed;
       }
-      if (keys['s'] || keys['arrowdown']) {
+      if (keys['KeyS'] || keys['ArrowDown']) {
         moveX -= forward.x * moveSpeed;
         moveZ -= forward.z * moveSpeed;
       }
-      if (keys['a'] || keys['arrowleft']) {
+      if (keys['KeyA'] || keys['ArrowLeft']) {
         moveX -= right.x * moveSpeed;
         moveZ -= right.z * moveSpeed;
       }
-      if (keys['d'] || keys['arrowright']) {
+      if (keys['KeyD'] || keys['ArrowRight']) {
         moveX += right.x * moveSpeed;
         moveZ += right.z * moveSpeed;
       }
-      
+
       // Vertical movement (only when tripping - flying mode)
       if (trippingRef.current) {
-        if (keys['q'] || keys[' ']) { // Q or Space to go up
+        if (keys['KeyQ'] || keys['Space']) { // Q or Space to go up
           moveY += moveSpeed;
         }
-        if (keys['e'] || keys['shift']) { // E or Shift to go down
+        if (keys['KeyE'] || keys['ShiftLeft'] || keys['ShiftRight']) { // E or Shift to go down
           moveY -= moveSpeed;
         }
       }
@@ -2502,7 +2601,49 @@ const WanderingMuseum = ({ onComplete }) => {
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      
+
+      {/* FPS counter (F key toggle) */}
+      {showFps && (
+        <div
+          ref={fpsDisplayRef}
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            padding: '4px 8px',
+            background: 'rgba(0,0,0,0.6)',
+            color: '#0f0',
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            zIndex: 300,
+            pointerEvents: 'none'
+          }}
+        >
+          -- FPS
+        </div>
+      )}
+
+      {/* Quality toast notification */}
+      {qualityToast && (
+        <div style={{
+          position: 'absolute',
+          bottom: '80px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          padding: '8px 20px',
+          background: 'rgba(0,0,0,0.7)',
+          color: '#ffcc44',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '14px',
+          borderRadius: '4px',
+          zIndex: 300,
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap'
+        }}>
+          {qualityToast}
+        </div>
+      )}
+
       {/* Instructions overlay */}
       {instructions && (
         <div style={{
