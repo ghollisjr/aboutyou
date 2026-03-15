@@ -211,33 +211,83 @@ const WanderingMuseum = ({ onComplete }) => {
       flatShading: true
     });
 
-    function addTetra(cx, cy, cz, s, lvl) {
+    // Collect positions and sizes, then merge into single geometry
+    const positions = [];
+    function collectTetra(cx, cy, cz, s, lvl) {
       if (lvl === 0) {
-        const geom = new THREE.TetrahedronGeometry(s);
-        const mesh = new THREE.Mesh(geom, material);
-        mesh.position.set(cx, cy, cz);
-        group.add(mesh);
-        // Edge lines
-        const edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(geom),
-          new THREE.LineBasicMaterial({ color: 0xffaa88 })
-        );
-        mesh.add(edges);
+        positions.push({ x: cx, y: cy, z: cz, s });
         return;
       }
       const hs = s / 2;
       const h = s * Math.sqrt(2 / 3);
       const hh = h / 2;
-      // 4 sub-tetrahedra at vertices
       const off = hs * 0.5;
-      addTetra(cx, cy + hh * 0.5, cz, hs, lvl - 1); // top
-      addTetra(cx - off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
-      addTetra(cx + off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
-      addTetra(cx, cy - hh * 0.5, cz + off * 1.155, hs, lvl - 1);
+      collectTetra(cx, cy + hh * 0.5, cz, hs, lvl - 1);
+      collectTetra(cx - off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
+      collectTetra(cx + off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
+      collectTetra(cx, cy - hh * 0.5, cz + off * 1.155, hs, lvl - 1);
     }
+    collectTetra(0, 0, 0, size, level);
 
-    addTetra(0, 0, 0, size, level);
+    // Merge all tetrahedra into one geometry
+    const geoms = positions.map(p => {
+      const g = new THREE.TetrahedronGeometry(p.s);
+      g.translate(p.x, p.y, p.z);
+      return g;
+    });
+    const merged = mergeGeometries(geoms);
+    geoms.forEach(g => g.dispose());
+    const mesh = new THREE.Mesh(merged, material);
+    group.add(mesh);
+
+    // Single merged edge lines
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(merged),
+      new THREE.LineBasicMaterial({ color: 0xffaa88 })
+    );
+    group.add(edges);
+
     return group;
+  }
+
+  // Simple geometry merge helper
+  function mergeGeometries(geometries) {
+    let totalVerts = 0, totalIndices = 0;
+    const infos = geometries.map(g => {
+      const pos = g.attributes.position;
+      const idx = g.index;
+      const info = { pos, idx, vertCount: pos.count, idxCount: idx ? idx.count : 0 };
+      totalVerts += pos.count;
+      totalIndices += idx ? idx.count : pos.count;
+      return info;
+    });
+    const mergedPos = new Float32Array(totalVerts * 3);
+    const mergedNorm = new Float32Array(totalVerts * 3);
+    const mergedIdx = new Uint32Array(totalIndices);
+    let vertOffset = 0, idxOffset = 0;
+    for (const g of geometries) {
+      const pos = g.attributes.position.array;
+      const norm = g.attributes.normal ? g.attributes.normal.array : null;
+      mergedPos.set(pos, vertOffset * 3);
+      if (norm) mergedNorm.set(norm, vertOffset * 3);
+      if (g.index) {
+        for (let i = 0; i < g.index.count; i++) {
+          mergedIdx[idxOffset + i] = g.index.array[i] + vertOffset;
+        }
+        idxOffset += g.index.count;
+      } else {
+        for (let i = 0; i < g.attributes.position.count; i++) {
+          mergedIdx[idxOffset + i] = vertOffset + i;
+        }
+        idxOffset += g.attributes.position.count;
+      }
+      vertOffset += g.attributes.position.count;
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
+    merged.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
+    return merged;
   }
 
   function createStellaOctangula(size = 1) {
@@ -357,58 +407,142 @@ const WanderingMuseum = ({ onComplete }) => {
       metalness: 0.6
     });
 
-    function addCubes(cx, cy, cz, s, lvl) {
+    // Collect cube positions, then merge
+    const cubes = [];
+    function collectCubes(cx, cy, cz, s, lvl) {
       if (lvl === 0) {
-        const geom = new THREE.BoxGeometry(s, s, s);
-        const mesh = new THREE.Mesh(geom, material);
-        mesh.position.set(cx, cy, cz);
-        group.add(mesh);
+        cubes.push({ x: cx, y: cy, z: cz, s });
         return;
       }
       const ns = s / 3;
       for (let x = -1; x <= 1; x++) {
         for (let y = -1; y <= 1; y++) {
           for (let z = -1; z <= 1; z++) {
-            // Skip center of each face and absolute center
             const absSum = (x === 0 ? 1 : 0) + (y === 0 ? 1 : 0) + (z === 0 ? 1 : 0);
-            if (absSum >= 2) continue; // Remove center cross
-            addCubes(cx + x * ns, cy + y * ns, cz + z * ns, ns, lvl - 1);
+            if (absSum >= 2) continue;
+            collectCubes(cx + x * ns, cy + y * ns, cz + z * ns, ns, lvl - 1);
           }
         }
       }
     }
+    collectCubes(0, 0, 0, size, level);
 
-    addCubes(0, 0, 0, size, level);
+    const geoms = cubes.map(c => {
+      const g = new THREE.BoxGeometry(c.s, c.s, c.s);
+      g.translate(c.x, c.y, c.z);
+      return g;
+    });
+    const merged = mergeGeometries(geoms);
+    geoms.forEach(g => g.dispose());
+    const mesh = new THREE.Mesh(merged, material);
+    group.add(mesh);
+
     return group;
   }
 
-  function createHopfFibration() {
+  function createApollonianGasket() {
     const group = new THREE.Group();
-    const numFibers = 12;
+    // 2D Apollonian gasket using Descartes Circle Theorem
+    // Rendered as torus rings (circles with thickness) for 3D appearance
+    const circles = []; // { x, y, r }
 
-    for (let i = 0; i < numFibers; i++) {
-      const hue = i / numFibers;
-      const color = new THREE.Color().setHSL(hue, 0.8, 0.5);
-      const material = new THREE.MeshStandardMaterial({
-        color: color,
-        roughness: 0.2,
-        metalness: 0.8
-      });
+    // Descartes Circle Theorem: given 3 mutually tangent circles with curvatures k1,k2,k3,
+    // the 4th tangent circle has curvature k4 = k1+k2+k3 + 2*sqrt(k1*k2 + k2*k3 + k1*k3)
+    // Complex Descartes theorem gives the center.
 
-      const theta = (i / numFibers) * Math.PI * 2;
-      const phi = (i / numFibers) * Math.PI;
-      const r = 0.6;
+    // Start with bounding circle (curvature negative = contains others) and 3 inner tangent circles
+    // Bounding circle: r=1, k=-1
+    // Three inner mutually tangent circles: r = 1/(1+2/sqrt(3)), arranged symmetrically
+    const R = 0.9;
+    const r3 = R / (1 + 2 / Math.sqrt(3));
+    const d3 = R - r3;
 
-      const torusGeom = new THREE.TorusGeometry(0.3, 0.03, 16, 48);
-      const torus = new THREE.Mesh(torusGeom, material);
-      torus.position.set(
-        r * Math.cos(theta) * Math.sin(phi),
-        r * Math.sin(theta) * Math.sin(phi),
-        r * Math.cos(phi)
-      );
-      torus.rotation.set(theta, phi, theta * 0.5);
-      group.add(torus);
+    // Initial 4 circles: outer + 3 inner
+    const initCircles = [
+      { x: 0, y: 0, r: R, k: -1/R },  // bounding (negative curvature)
+      { x: 0, y: d3, r: r3, k: 1/r3 },
+      { x: d3 * Math.cos(7*Math.PI/6), y: d3 * Math.sin(7*Math.PI/6), r: r3, k: 1/r3 },
+      { x: d3 * Math.cos(11*Math.PI/6), y: d3 * Math.sin(11*Math.PI/6), r: r3, k: 1/r3 }
+    ];
+
+    initCircles.forEach(c => circles.push(c));
+
+    // Recursively find new tangent circles using Descartes theorem
+    function descartesK(k1, k2, k3) {
+      return k1 + k2 + k3 + 2 * Math.sqrt(Math.abs(k1*k2 + k2*k3 + k1*k3));
     }
+
+    // Complex Descartes for center: z4 = (z1*k1 + z2*k2 + z3*k3 + 2*sqrt(k1*k2*z1*z2 + ...)) / k4
+    function descartesCenter(c1, c2, c3, k4) {
+      const w1r = c1.x * c1.k, w1i = c1.y * c1.k;
+      const w2r = c2.x * c2.k, w2i = c2.y * c2.k;
+      const w3r = c3.x * c3.k, w3i = c3.y * c3.k;
+
+      // sqrt(k1*k2*z1*z2) etc. — use complex multiplication
+      function cmul(ar, ai, br, bi) { return [ar*br - ai*bi, ar*bi + ai*br]; }
+      function csqrt(re, im) {
+        const mag = Math.sqrt(re*re + im*im);
+        const angle = Math.atan2(im, re) / 2;
+        const r = Math.sqrt(mag);
+        return [r * Math.cos(angle), r * Math.sin(angle)];
+      }
+
+      const [p1r, p1i] = cmul(w1r, w1i, w2r, w2i);
+      const [p2r, p2i] = cmul(w2r, w2i, w3r, w3i);
+      const [p3r, p3i] = cmul(w1r, w1i, w3r, w3i);
+
+      const sumR = p1r + p2r + p3r;
+      const sumI = p1i + p2i + p3i;
+      const [sqR, sqI] = csqrt(sumR, sumI);
+
+      const zr = (w1r + w2r + w3r + 2 * sqR) / k4;
+      const zi = (w1i + w2i + w3i + 2 * sqI) / k4;
+      return { x: zr, y: zi };
+    }
+
+    function fillGasket(c1, c2, c3, depth) {
+      if (depth > 5) return;
+      const k4 = descartesK(c1.k, c2.k, c3.k);
+      const r4 = 1 / k4;
+      if (r4 < 0.01 * R) return; // too small to see
+      const center = descartesCenter(c1, c2, c3, k4);
+      const newC = { x: center.x, y: center.y, r: r4, k: k4 };
+      circles.push(newC);
+      // Recurse into 3 new gaps
+      fillGasket(c1, c2, newC, depth + 1);
+      fillGasket(c1, c3, newC, depth + 1);
+      fillGasket(c2, c3, newC, depth + 1);
+    }
+
+    // Fill the 4 initial gaps (3 between inner circles + 3 between each inner and outer)
+    fillGasket(initCircles[0], initCircles[1], initCircles[2], 0);
+    fillGasket(initCircles[0], initCircles[1], initCircles[3], 0);
+    fillGasket(initCircles[0], initCircles[2], initCircles[3], 0);
+    fillGasket(initCircles[1], initCircles[2], initCircles[3], 0);
+
+    // Render each circle as a torus (ring in 3D)
+    const tubeRadius = 0.012;
+    const geoms = [];
+    circles.forEach(c => {
+      const absR = Math.abs(c.r);
+      if (absR < 0.01 * R) return;
+      const g = new THREE.TorusGeometry(absR, tubeRadius, 6, 32);
+      g.translate(c.x, c.y, 0);
+      geoms.push(g);
+    });
+
+    const merged = mergeGeometries(geoms);
+    geoms.forEach(g => g.dispose());
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x44bbff,
+      emissive: 0x113344,
+      emissiveIntensity: 0.4,
+      roughness: 0.2,
+      metalness: 0.7
+    });
+    const mesh = new THREE.Mesh(merged, material);
+    group.add(mesh);
 
     return group;
   }
@@ -877,12 +1011,30 @@ const WanderingMuseum = ({ onComplete }) => {
       artMesh.position.y = 1.2 + 1.3; // top of pedestal + offset for art center (clearance for oscillation)
       group.add(artMesh);
 
+      // Add subtle wireframe overlay to all geometry in the art mesh
+      const wireframeMat = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false
+      });
+      artMesh.traverse(obj => {
+        if (obj.geometry && obj.isMesh) {
+          const wire = new THREE.LineSegments(
+            new THREE.WireframeGeometry(obj.geometry),
+            wireframeMat
+          );
+          obj.add(wire);
+        }
+      });
+
       // Invisible interaction volume covering pedestal + art area
       const interactionBox = new THREE.Mesh(
         new THREE.BoxGeometry(2, 3.5, 2),
         new THREE.MeshBasicMaterial({ visible: false })
       );
       interactionBox.position.y = 1.75;
+      interactionBox.userData.isInteractionBox = true;
       group.add(interactionBox);
 
       group.position.set(position.x, position.y, position.z);
@@ -994,7 +1146,7 @@ const WanderingMuseum = ({ onComplete }) => {
     // --- Maze Art Pieces (beyond back wall, Z < -20) ---
 
     // M1: Sierpinski Tetrahedron — Room 1 west alcove
-    const sierpinskiMesh = createSierpinskiTetrahedron(2, 0.9);
+    const sierpinskiMesh = createSierpinskiTetrahedron(3, 0.9);
     const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-15, 0, -27.5));
     scene.add(sierpinskiPedestal);
     artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
@@ -1045,11 +1197,11 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(fivecubesPedestal);
     artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
 
-    // M9: Hopf Fibration — center deep passage
-    const hopfMesh = createHopfFibration();
-    const hopfPedestal = createPedestal('Hopf Fibration', hopfMesh, new THREE.Vector3(1, 0, -42));
-    scene.add(hopfPedestal);
-    artPieces.push({ mesh: hopfPedestal, artMesh: hopfMesh, id: 'hopf', examined: false, rotatable: true, isHidden: true });
+    // M9: Apollonian Gasket — center deep passage
+    const apollonianMesh = createApollonianGasket();
+    const apollonianPedestal = createPedestal('Apollonian Gasket', apollonianMesh, new THREE.Vector3(1, 0, -42));
+    scene.add(apollonianPedestal);
+    artPieces.push({ mesh: apollonianPedestal, artMesh: apollonianMesh, id: 'apollonian', examined: false, rotatable: true, isHidden: true });
 
     // --- 6. Torus Knot (smooth → envMap, chrome) ---
     const torusKnotMesh = new THREE.Mesh(
@@ -1141,6 +1293,7 @@ const WanderingMuseum = ({ onComplete }) => {
       new THREE.MeshBasicMaterial({ visible: false })
     );
     tableInteractionBox.position.y = 1;
+    tableInteractionBox.userData.isInteractionBox = true;
     tableGroup.add(tableInteractionBox);
 
     // Pulsing animation for button
@@ -1686,23 +1839,27 @@ const WanderingMuseum = ({ onComplete }) => {
     const maxInteractDistance = 8;
 
     // Shared function to find what piece the player is looking at within range
+    // Collect all interaction boxes for efficient raycasting
+    const interactionBoxes = [];
+    artPieces.forEach(p => {
+      p.mesh.traverse(child => {
+        if (child.userData.isInteractionBox) {
+          interactionBoxes.push({ box: child, piece: p });
+        }
+      });
+    });
+
     const findTargetPiece = () => {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      const meshes = artPieces.map(p => p.mesh);
-      const intersects = raycaster.intersectObjects(meshes, true);
+      raycaster.far = maxInteractDistance;
+      const boxes = interactionBoxes.map(ib => ib.box);
+      const intersects = raycaster.intersectObjects(boxes, false);
 
-      if (intersects.length > 0 && intersects[0].distance <= maxInteractDistance) {
-        const clickedMesh = intersects[0].object;
-        const artPiece = artPieces.find(p => {
-          let obj = clickedMesh;
-          while (obj) {
-            if (obj === p.mesh) return true;
-            obj = obj.parent;
-          }
-          return false;
-        });
-        return artPiece || null;
+      if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        const match = interactionBoxes.find(ib => ib.box === hit);
+        return match ? match.piece : null;
       }
       return null;
     };
