@@ -417,7 +417,7 @@
                 row.innerHTML = `
                     <span class="score-game">🏛️ MUSEUM</span>
                     <span class="score-detail">${method}</span>
-                    <span class="score-detail">${m.uniqueDescriptions}/6 FOUND</span>
+                    <span class="score-detail">${m.uniqueDescriptions}/${m.totalArt || '?'} FOUND</span>
                     <span class="score-trait">OPENNESS</span>
                     <span class="score-value" style="text-align:right">${pct}%</span>
                 `;

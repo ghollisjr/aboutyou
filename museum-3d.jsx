@@ -25,6 +25,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0 });
   const fpsDisplayRef = useRef(null);
   const qualityRef = useRef('high');
+  const totalArtRef = useRef(0);
   
   // Update ref when state changes
   useEffect(() => {
@@ -1474,6 +1475,9 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     artPieces.push(tripPortal);
 
+    // Store total regular art piece count for UI
+    totalArtRef.current = artPieces.filter(p => !p.isButton && !p.isTripExit).length;
+
     // Collision boxes for walls (x, z, width, depth)
     const walls = [
       // Outer walls (back wall split for maze entrance gap at X=[-2, 4])
@@ -1701,6 +1705,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       const results = {
         uniqueDescriptions,
+        totalArt: regularObjects,
         abstractnessLevel,
         viewsExplored,
         totalRotations: gameState.rotationsPerformed,
@@ -2777,7 +2782,7 @@ const WanderingMuseum = ({ onComplete }) => {
                 : 'museum visited'}
             </h2>
             <div style={{ opacity: 0.7, lineHeight: '2', fontSize: '15px', marginBottom: '30px' }}>
-              <div>Art pieces examined: {completionResults.uniqueDescriptions} / 15</div>
+              <div>Art pieces examined: {completionResults.uniqueDescriptions} / {totalArtRef.current}</div>
               <div>Completion: {completionResults.completionMethod === 'trip' ? 'psychedelic portal'
                 : completionResults.completionMethod === 'sober' ? 'full gallery tour'
                 : 'early departure'}</div>
@@ -2819,8 +2824,8 @@ const WanderingMuseum = ({ onComplete }) => {
             opacity: 0.6
           }}>
             <div>
-              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / 15
-              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= 15 && !isTripping && (
+              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / {totalArtRef.current}
+              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= totalArtRef.current && !isTripping && (
                 <span style={{ color: '#00ff00', marginLeft: '10px' }}>✓ Complete!</span>
               )}
             </div>
