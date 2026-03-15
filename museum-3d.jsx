@@ -17,6 +17,8 @@ const WanderingMuseum = ({ onComplete }) => {
   const wasAlignedRef = useRef(false); // Track previous alignment state
   const [completionResults, setCompletionResults] = useState(null);
   const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
+  const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
+  const buttonVignetteRef = useRef(0);
   
   // Update ref when state changes
   useEffect(() => {
@@ -2067,66 +2069,69 @@ const WanderingMuseum = ({ onComplete }) => {
         });
       }
 
-      // Hover glow helpers: traverse all meshes, handle both emissive and line materials
-      const processedMaterials = new Set(); // Avoid processing shared materials multiple times
-      const setHoverGlow = (piece, on) => {
-        const root = piece.artMesh || piece.mesh;
-        processedMaterials.clear();
-        const traverse = (obj) => {
-          const mat = obj.material;
-          if (mat && !processedMaterials.has(mat)) {
-            processedMaterials.add(mat);
-            if (mat.emissive) {
-              // MeshStandardMaterial, MeshPhongMaterial, etc.
-              if (on) {
-                if (mat._hoverOrigEmissive === undefined) {
-                  mat._hoverOrigEmissive = mat.emissive.getHex();
-                  mat._hoverOrigIntensity = mat.emissiveIntensity;
-                }
-                mat.emissive.setHex(0xffffff);
-                mat.emissiveIntensity = 0.8;
-              } else if (mat._hoverOrigEmissive !== undefined) {
-                mat.emissive.setHex(mat._hoverOrigEmissive);
-                mat.emissiveIntensity = mat._hoverOrigIntensity;
-                delete mat._hoverOrigEmissive;
-                delete mat._hoverOrigIntensity;
-              }
-            } else if (mat.color) {
-              // LineBasicMaterial, MeshBasicMaterial, etc.
-              if (on) {
-                if (mat._hoverOrigColor === undefined) {
-                  mat._hoverOrigColor = mat.color.getHex();
-                }
-                mat.color.setHex(0xffffff);
-              } else if (mat._hoverOrigColor !== undefined) {
-                mat.color.setHex(mat._hoverOrigColor);
-                delete mat._hoverOrigColor;
-              }
-            }
-          }
-          if (obj.children) obj.children.forEach(traverse);
-        };
-        traverse(root);
-      };
-
-      // Hover glow: check what piece the player is looking at within range
+      // Hover feedback: oscillation for art pieces, vignette for trip button
       const hoverTarget = findTargetPiece();
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
         if (hoveredPiece !== hoverTarget) {
-          // Restore previous hover
-          if (hoveredPiece) setHoverGlow(hoveredPiece, false);
-          // Set new hover glow
+          // Restore previous hovered piece
+          if (hoveredPiece) {
+            if (hoveredPiece.isButton) {
+              // Restore button brightness
+              if (hoveredPiece.buttonMesh) {
+                hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
+              }
+            } else if (hoveredPiece.artMesh) {
+              hoveredPiece.artMesh.position.y = hoveredPiece._baseArtY;
+            }
+          }
           hoveredPiece = hoverTarget;
-          setHoverGlow(hoverTarget, true);
+          if (!hoverTarget.isButton) {
+            const target = hoveredPiece.artMesh || hoveredPiece.mesh;
+            if (hoveredPiece._baseArtY === undefined) {
+              hoveredPiece._baseArtY = target.position.y;
+            }
+          }
           const action = hoverTarget.isButton ? 'to trip balls' : 'to examine';
           const inputHint = gamepadIndex !== null ? `press A ${action}` : `click ${action}`;
           setInteractPrompt({ name: '', inputHint });
         }
+        if (hoveredPiece.isButton) {
+          // Gradually ramp up vignette and button brightness
+          buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + deltaTime * 0.4);
+          setButtonVignette(buttonVignetteRef.current);
+          if (hoveredPiece.buttonMesh) {
+            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 2.5;
+          }
+        } else {
+          // Oscillate the art mesh only (0.5 Hz)
+          const target = hoveredPiece.artMesh || hoveredPiece.mesh;
+          if (target) {
+            const baseY = hoveredPiece._baseArtY;
+            target.position.y = baseY + 0.3 + Math.sin(currentTime / 1000 * Math.PI) * 0.3;
+          }
+        }
       } else {
         if (hoveredPiece) {
-          setHoverGlow(hoveredPiece, false);
+          if (hoveredPiece.isButton) {
+            if (hoveredPiece.buttonMesh) {
+              hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
+            }
+          } else {
+            const target = hoveredPiece.artMesh || hoveredPiece.mesh;
+            if (target) {
+              target.position.y = hoveredPiece._baseArtY;
+            }
+          }
           hoveredPiece = null;
           setInteractPrompt(null);
+        }
+      }
+
+      // Fade vignette down when not hovering button
+      if (!hoveredPiece || !hoveredPiece.isButton) {
+        if (buttonVignetteRef.current > 0) {
+          buttonVignetteRef.current = Math.max(0, buttonVignetteRef.current - deltaTime * 0.8);
+          setButtonVignette(buttonVignetteRef.current);
         }
       }
 
@@ -2587,6 +2592,16 @@ const WanderingMuseum = ({ onComplete }) => {
                 transform: 'translate(-50%, -50%)'
               }} />
             </div>
+          )}
+
+          {/* Button vignette overlay */}
+          {buttonVignette > 0.01 && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              pointerEvents: 'none',
+              background: `radial-gradient(ellipse at center, transparent ${30 - buttonVignette * 15}%, rgba(0,0,0,${buttonVignette * 0.7}) ${60 - buttonVignette * 20}%, rgba(0,0,0,${buttonVignette * 0.95}) 100%)`,
+            }} />
           )}
 
           {/* Interact prompt */}
