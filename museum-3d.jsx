@@ -16,6 +16,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const alignmentTimeRef = useRef(0);
   const wasAlignedRef = useRef(false); // Track previous alignment state
   const [completionResults, setCompletionResults] = useState(null);
+  const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
   
   // Update ref when state changes
   useEffect(() => {
@@ -687,6 +688,7 @@ const WanderingMuseum = ({ onComplete }) => {
     });
     const exitZone = new THREE.Mesh(exitZoneGeometry, exitZoneMaterial);
     exitZone.position.set(0, 5, 0);
+    exitZone.visible = false;
     scene.add(exitZone);
 
     // Ceiling - dark plane overhead to contain light
@@ -750,13 +752,13 @@ const WanderingMuseum = ({ onComplete }) => {
     });
 
     // Main room walls
-    // Back wall split into two segments with gap for maze entrance
-    const wall1a = new THREE.Mesh(new THREE.BoxGeometry(19, 6, 0.5), wallMaterial);
-    wall1a.position.set(-10.5, 3, -20);
+    // Back wall split into two segments with 6-unit gap for maze entrance
+    const wall1a = new THREE.Mesh(new THREE.BoxGeometry(18, 6, 0.5), wallMaterial);
+    wall1a.position.set(-11, 3, -20);
     scene.add(wall1a);
 
-    const wall1b = new THREE.Mesh(new THREE.BoxGeometry(17, 6, 0.5), wallMaterial);
-    wall1b.position.set(11.5, 3, -20);
+    const wall1b = new THREE.Mesh(new THREE.BoxGeometry(16, 6, 0.5), wallMaterial);
+    wall1b.position.set(12, 3, -20);
     scene.add(wall1b);
 
     const wallGeometry = new THREE.BoxGeometry(40, 6, 0.5);
@@ -873,6 +875,14 @@ const WanderingMuseum = ({ onComplete }) => {
       artMesh.position.y = 1.2 + 1.0; // top of pedestal + offset for art center
       group.add(artMesh);
 
+      // Invisible interaction volume covering pedestal + art area
+      const interactionBox = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 3.5, 2),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      interactionBox.position.y = 1.75;
+      group.add(interactionBox);
+
       group.position.set(position.x, position.y, position.z);
       return group;
     };
@@ -983,13 +993,13 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // M1: Sierpinski Tetrahedron — Room 1 west alcove
     const sierpinskiMesh = createSierpinskiTetrahedron(2, 0.9);
-    const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-10, 0, -23.5));
+    const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-15, 0, -27.5));
     scene.add(sierpinskiPedestal);
     artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
 
     // M2: Lorenz Attractor — Room 2 east alcove
     const lorenzMesh = createLorenzAttractor();
-    const lorenzPedestal = createPedestal('Lorenz Attractor', lorenzMesh, new THREE.Vector3(10, 0, -23.5));
+    const lorenzPedestal = createPedestal('Lorenz Attractor', lorenzMesh, new THREE.Vector3(15, 0, -27.5));
     scene.add(lorenzPedestal);
     artPieces.push({ mesh: lorenzPedestal, artMesh: lorenzMesh, id: 'lorenz', examined: false, rotatable: true, isHidden: true });
 
@@ -997,45 +1007,45 @@ const WanderingMuseum = ({ onComplete }) => {
     const gyroidMesh = createGyroid(0.8, 30);
     gyroidMesh.material.envMap = envTexture;
     gyroidMesh.material.envMapIntensity = 0.6;
-    const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(-4, 0, -23.5));
+    const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(-6, 0, -27.5));
     scene.add(gyroidPedestal);
     artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
 
     // M4: Hyperbolic Paraboloid — main corridor east
     const saddleMesh = createSaddleSurface(0.8, 20);
-    const saddlePedestal = createPedestal('Hyperbolic Paraboloid', saddleMesh, new THREE.Vector3(5, 0, -23.5));
+    const saddlePedestal = createPedestal('Hyperbolic Paraboloid', saddleMesh, new THREE.Vector3(7, 0, -27.5));
     scene.add(saddlePedestal);
     artPieces.push({ mesh: saddlePedestal, artMesh: saddleMesh, id: 'saddle', examined: false, rotatable: true, isHidden: true });
 
     // M5: Stella Octangula — deep west room
     const stellaMesh = createStellaOctangula(0.8);
-    const stellaPedestal = createPedestal('Stella Octangula', stellaMesh, new THREE.Vector3(-7, 0, -27));
+    const stellaPedestal = createPedestal('Stella Octangula', stellaMesh, new THREE.Vector3(-12, 0, -35));
     scene.add(stellaPedestal);
     artPieces.push({ mesh: stellaPedestal, artMesh: stellaMesh, id: 'stella', examined: false, rotatable: true, isHidden: true });
 
-    // M6: Trefoil Knot — deep west alcove (south of W14)
+    // M6: Trefoil Knot — deep west alcove south
     const trefoilMesh = createTrefoilKnot();
     trefoilMesh.material.envMap = envTexture;
     trefoilMesh.material.envMapIntensity = 1.0;
-    const trefoilPedestal = createPedestal('Trefoil Knot', trefoilMesh, new THREE.Vector3(-8, 0, -30.5));
+    const trefoilPedestal = createPedestal('Trefoil Knot', trefoilMesh, new THREE.Vector3(-12, 0, -42));
     scene.add(trefoilPedestal);
     artPieces.push({ mesh: trefoilPedestal, artMesh: trefoilMesh, id: 'trefoil', examined: false, rotatable: true, isHidden: true });
 
     // M7: Menger Sponge — deep east room
     const mengerMesh = createMengerSponge(2, 1.2);
-    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(8, 0, -27));
+    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(13, 0, -35));
     scene.add(mengerPedestal);
     artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
 
-    // M8: Compound of 5 Cubes — deep east alcove (south of W15)
+    // M8: Compound of 5 Cubes — deep east alcove south
     const fivecubesMesh = createFiveCubes(0.7);
-    const fivecubesPedestal = createPedestal('Compound of 5 Cubes', fivecubesMesh, new THREE.Vector3(9, 0, -30.5));
+    const fivecubesPedestal = createPedestal('Compound of 5 Cubes', fivecubesMesh, new THREE.Vector3(13, 0, -42));
     scene.add(fivecubesPedestal);
     artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
 
     // M9: Hopf Fibration — center deep passage
     const hopfMesh = createHopfFibration();
-    const hopfPedestal = createPedestal('Hopf Fibration', hopfMesh, new THREE.Vector3(1, 0, -30));
+    const hopfPedestal = createPedestal('Hopf Fibration', hopfMesh, new THREE.Vector3(1, 0, -42));
     scene.add(hopfPedestal);
     artPieces.push({ mesh: hopfPedestal, artMesh: hopfMesh, id: 'hopf', examined: false, rotatable: true, isHidden: true });
 
@@ -1123,9 +1133,17 @@ const WanderingMuseum = ({ onComplete }) => {
     label.position.set(0, 0.5, 0.78);
     tableGroup.add(label);
     
+    // Invisible interaction volume for trip button table
+    const tableInteractionBox = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 2, 2),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    tableInteractionBox.position.y = 1;
+    tableGroup.add(tableInteractionBox);
+
     // Pulsing animation for button
     let buttonPulseTime = 0;
-    
+
     tableGroup.position.set(0, 0, 0);
     scene.add(tableGroup);
     
@@ -1140,25 +1158,120 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     artPieces.push(tripButton);
 
-    // Trip Exit Portal - only visible/interactable when tripping
-    const portalGeometry = new THREE.SphereGeometry(1, 32, 32);
-    const portalMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ffff,
-      emissive: 0x00ffff,
-      emissiveIntensity: 2,
+    // Trip Exit Portal - screen-space glow overlay (rendered in tripScene)
+    // Portal shader renders a dynamic glow/vortex centered on screen
+    const portalOverlayMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        intensity: { value: 0 }, // 0 = invisible, 1 = full
+        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform float intensity;
+        uniform vec2 resolution;
+        varying vec2 vUv;
+
+        void main() {
+          vec2 uv = (vUv - 0.5) * 2.0;
+          float aspect = resolution.x / resolution.y;
+          uv.x *= aspect;
+          float dist = length(uv);
+          float angle = atan(uv.y, uv.x);
+
+          // Expanding radius based on intensity - fills more of the screen as it grows
+          float radius = intensity * 1.8;
+
+          // Dark vignette that closes in from edges
+          float vignette = smoothstep(radius + 0.5, radius - 0.2, dist);
+          float darkness = (1.0 - vignette) * intensity;
+
+          // Multiple swirling layers
+          float swirl1 = sin(angle * 3.0 - time * 5.0 + dist * 10.0) * 0.5 + 0.5;
+          float swirl2 = sin(angle * 5.0 + time * 4.0 - dist * 15.0) * 0.5 + 0.5;
+          float swirl3 = sin(angle * 7.0 - time * 3.0 + dist * 6.0) * 0.5 + 0.5;
+
+          // Massive central glow that expands
+          float pulse = 0.7 + 0.3 * sin(time * 6.0);
+          float pulse2 = 0.8 + 0.2 * sin(time * 8.0 + 1.0);
+          float glow = exp(-dist * max(0.5, 3.0 - intensity * 2.5)) * pulse;
+          float innerGlow = exp(-dist * max(0.3, 5.0 - intensity * 4.5)) * pulse2;
+
+          // Expanding ring waves
+          float wave1 = smoothstep(0.06, 0.0, abs(dist - mod(time * 0.8, 2.0))) * 0.8;
+          float wave2 = smoothstep(0.06, 0.0, abs(dist - mod(time * 0.8 + 1.0, 2.0))) * 0.6;
+          float ring1 = smoothstep(0.05, 0.0, abs(dist - 0.2 * intensity - 0.15 * sin(time * 2.5)));
+          float ring2 = smoothstep(0.06, 0.0, abs(dist - 0.5 * intensity + 0.1 * sin(time * 3.5)));
+          float ring3 = smoothstep(0.08, 0.0, abs(dist - 0.8 * intensity - 0.12 * sin(time * 2.0)));
+          float ring4 = smoothstep(0.1, 0.0, abs(dist - 1.2 * intensity + 0.08 * sin(time * 4.0)));
+
+          // Dramatic lens flare rays
+          float rays = pow(abs(sin(angle * 4.0 + time * 2.5)), 6.0) * exp(-dist * 0.8) * intensity;
+          float rays2 = pow(abs(sin(angle * 6.0 - time * 2.0)), 10.0) * exp(-dist * 1.0) * intensity;
+          float rays3 = pow(abs(sin(angle * 2.0 + time * 1.0)), 4.0) * exp(-dist * 0.6) * intensity * 0.5;
+
+          // Spiral arms
+          float spiral = sin(angle * 2.0 + dist * 8.0 - time * 6.0) * 0.5 + 0.5;
+          float spiralGlow = spiral * exp(-dist * (2.0 - intensity)) * 0.5;
+
+          // Color: white-hot center → cyan → purple → dark edges
+          vec3 whiteHot = vec3(1.0, 1.0, 1.0);
+          vec3 cyanCore = vec3(0.2, 0.9, 1.0);
+          vec3 blueMiddle = vec3(0.1, 0.4, 1.0);
+          vec3 purpleEdge = vec3(0.6, 0.1, 0.9);
+          vec3 color = mix(purpleEdge, blueMiddle, exp(-dist * 1.0));
+          color = mix(color, cyanCore, exp(-dist * 2.0));
+          color = mix(color, whiteHot, exp(-dist * (4.0 - intensity * 2.0)) * intensity);
+
+          // Combine all effects
+          float brightness = glow * 0.8
+            + innerGlow * 1.5 * intensity
+            + (ring1 + ring2 + ring3 + ring4) * 0.5 * swirl1
+            + (wave1 + wave2) * swirl2
+            + rays * 0.6 + rays2 * 0.4 + rays3 * 0.3
+            + spiralGlow * swirl3
+            + swirl2 * exp(-dist * 2.0) * 0.3;
+
+          // Chromatic flicker
+          color.r += sin(time * 9.0) * 0.08 * intensity;
+          color.g += sin(time * 7.0 + 2.0) * 0.04 * intensity;
+          color.b += sin(time * 5.0 + 1.0) * 0.1 * intensity;
+
+          // Final: bright portal glow in center, dark tunnel around it
+          vec3 finalColor = color * brightness * intensity * 2.0;
+          float finalAlpha = max(darkness, brightness * intensity);
+          // Mix in black for the peripheral darkening
+          finalColor = mix(finalColor, vec3(0.0), darkness * (1.0 - brightness * 0.5));
+          finalAlpha = clamp(finalAlpha, 0.0, 1.0);
+
+          gl_FragColor = vec4(finalColor, finalAlpha);
+        }
+      `,
       transparent: true,
-      opacity: 0,
-      roughness: 0.1,
-      metalness: 0.9
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NormalBlending
     });
-    const portalMesh = new THREE.Mesh(portalGeometry, portalMaterial);
-    portalMesh.position.set(-15, 2, -15); // Hidden corner
-    scene.add(portalMesh);
-    
-    // Portal glow
-    const portalLight = new THREE.PointLight(0x00ffff, 0, 10);
-    portalLight.position.copy(portalMesh.position);
-    scene.add(portalLight);
+
+    // This gets added to the trip overlay scene later, not the main scene
+    const portalOverlayQuad = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      portalOverlayMaterial
+    );
+    portalOverlayQuad.renderOrder = 1000;
+    portalOverlayQuad.visible = false;
+
+    // We'll use a separate scene for the portal overlay
+    const portalOverlayScene = new THREE.Scene();
+    const portalOverlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    portalOverlayScene.add(portalOverlayQuad);
 
     // Alignment circles for trip exit puzzle
     const alignmentCircles = [];
@@ -1197,20 +1310,19 @@ const WanderingMuseum = ({ onComplete }) => {
     const alignmentRequired = 2000; // Must stay aligned for 2 seconds
     
     const tripPortal = {
-      mesh: portalMesh,
+      mesh: new THREE.Group(), // Dummy mesh (portal is screen-space overlay)
       id: 'tripPortal',
       examined: false,
       rotatable: false,
-      isTripExit: true,
-      light: portalLight
+      isTripExit: true
     };
     artPieces.push(tripPortal);
 
     // Collision boxes for walls (x, z, width, depth)
     const walls = [
-      // Outer walls (back wall split for maze entrance gap at X=[-1, 3])
-      { x: -10.5, z: -20, width: 19, depth: 0.5 },  // Back wall left
-      { x: 11.5, z: -20, width: 17, depth: 0.5 },   // Back wall right
+      // Outer walls (back wall split for maze entrance gap at X=[-2, 4])
+      { x: -11, z: -20, width: 18, depth: 0.5 },  // Back wall left
+      { x: 12, z: -20, width: 16, depth: 0.5 },   // Back wall right
       { x: 0, z: 20, width: 40, depth: 0.5 },     // South wall
       { x: -20, z: 0, width: 0.5, depth: 40 },    // West wall
       { x: 20, z: 0, width: 0.5, depth: 40 },     // East wall
@@ -1222,31 +1334,31 @@ const WanderingMuseum = ({ onComplete }) => {
     ];
 
     // --- Maze beyond back wall (Z < -20) ---
-    // Entry gap in back wall: X=[-1, 3]
-    // Maze extends from Z=-20 to Z=-32, X=-13 to X=13
+    // Entry gap in back wall: X=[-2, 4] (6 units wide)
+    // Maze extends from Z=-20 to Z=-46, X=-20 to X=20
     const mazeWallDefs = [
-      // Entry corridor
-      { w: 0.5, d: 2, x: -1, z: -21 },              // W1: entry left wall
-      { w: 0.5, d: 2, x: 3, z: -21 },                // W2: entry right wall
+      // Entry corridor (6 wide, 4 deep)
+      { w: 0.5, d: 4, x: -2, z: -22 },               // W1: entry left wall
+      { w: 0.5, d: 4, x: 4, z: -22 },                // W2: entry right wall
       // T-junction north wall (gap aligned with entry)
-      { w: 12, d: 0.5, x: -7, z: -22 },              // W3: T north wall west, X=[-13,-1]
-      { w: 10, d: 0.5, x: 8, z: -22 },               // W4: T north wall east, X=[3,13]
+      { w: 18, d: 0.5, x: -11, z: -24 },             // W3: T north west, X=[-20,-2]
+      { w: 16, d: 0.5, x: 12, z: -24 },              // W4: T north east, X=[4,20]
       // Maze perimeter
-      { w: 0.5, d: 10, x: -13, z: -27 },             // W5: west boundary, Z=[-32,-22]
-      { w: 0.5, d: 10, x: 13, z: -27 },              // W6: east boundary, Z=[-32,-22]
-      { w: 26, d: 0.5, x: 0, z: -32 },               // W7: south boundary
-      // Room dividers (partial walls with gaps at south end)
-      { w: 0.5, d: 1.5, x: -7, z: -22.75 },          // W8: Room 1 divider, Z=[-23.5,-22]
-      { w: 0.5, d: 1.5, x: 7, z: -22.75 },           // W9: Room 2 divider, Z=[-23.5,-22]
-      // South wall of main corridor (gaps for passages south)
-      { w: 4, d: 0.5, x: -11, z: -25 },              // W10: far west, X=[-13,-9]
-      { w: 4, d: 0.5, x: 11, z: -25 },               // W11: far east, X=[9,13]
-      // Deep section dividers (partial, gap at south Z=-29 to -32)
-      { w: 0.5, d: 4, x: -2, z: -27 },               // W12: deep west/center, Z=[-29,-25]
-      { w: 0.5, d: 4, x: 4, z: -27 },                // W13: center/deep east, Z=[-29,-25]
-      // Deep room cross-walls (alcoves)
-      { w: 4, d: 0.5, x: -8, z: -29 },               // W14: Room 3 alcove, X=[-10,-6]
-      { w: 4, d: 0.5, x: 9, z: -29 },                // W15: Room 4 alcove, X=[7,11]
+      { w: 0.5, d: 22, x: -20, z: -35 },             // W5: west boundary, Z=[-46,-24]
+      { w: 0.5, d: 22, x: 20, z: -35 },              // W6: east boundary, Z=[-46,-24]
+      { w: 40, d: 0.5, x: 0, z: -46 },               // W7: south boundary
+      // Room dividers (partial walls, 3 units deep, gap at south)
+      { w: 0.5, d: 3, x: -10, z: -25.5 },            // W8: Room 1 divider, Z=[-27,-24]
+      { w: 0.5, d: 3, x: 10, z: -25.5 },             // W9: Room 2 divider, Z=[-27,-24]
+      // South wall of main corridor (gaps between segments)
+      { w: 8, d: 0.5, x: -16, z: -31 },              // W10: far west, X=[-20,-12]
+      { w: 8, d: 0.5, x: 16, z: -31 },               // W11: far east, X=[12,20]
+      // Deep section dividers (partial, gap at south Z=-38 to -46)
+      { w: 0.5, d: 7, x: -3, z: -34.5 },             // W12: deep west/center, Z=[-38,-31]
+      { w: 0.5, d: 7, x: 5, z: -34.5 },              // W13: center/deep east, Z=[-38,-31]
+      // Deep room cross-walls (alcoves for deepest pieces)
+      { w: 6, d: 0.5, x: -12, z: -38 },              // W14: Room 3 alcove, X=[-15,-9]
+      { w: 6, d: 0.5, x: 13, z: -38 },               // W15: Room 4 alcove, X=[10,16]
     ];
 
     const mazeWalls = [];
@@ -1261,79 +1373,81 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Maze floor and ceiling
     const mazeFloor = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 12),
+      new THREE.PlaneGeometry(40, 26),
       floorMaterial
     );
     mazeFloor.rotation.x = -Math.PI / 2;
-    mazeFloor.position.set(0, 0, -26);
+    mazeFloor.position.set(0, 0, -33);
     scene.add(mazeFloor);
 
     const mazeCeiling = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 12),
+      new THREE.PlaneGeometry(40, 26),
       ceilingMaterial
     );
     mazeCeiling.rotation.x = Math.PI / 2;
-    mazeCeiling.position.set(0, 6, -26);
+    mazeCeiling.position.set(0, 6, -33);
     scene.add(mazeCeiling);
 
     // --- Maze Lighting ---
     const mazeLights = [];
 
-    // Entry corridor: warm amber
+    // Entry corridor
     const mazeLight1 = new THREE.PointLight(0xffcc88, 0.8, 15);
-    mazeLight1.position.set(1, 4, -21);
+    mazeLight1.position.set(1, 4, -22);
     scene.add(mazeLight1);
     mazeLights.push(mazeLight1);
 
-    // Main corridor: warm amber
-    const mazeLight2 = new THREE.PointLight(0xffcc88, 0.8, 15);
-    mazeLight2.position.set(-4, 4, -23.5);
+    // Main corridor west
+    const mazeLight2 = new THREE.PointLight(0xffcc88, 0.8, 18);
+    mazeLight2.position.set(-6, 4, -27.5);
     scene.add(mazeLight2);
     mazeLights.push(mazeLight2);
 
-    const mazeLight3 = new THREE.PointLight(0xffcc88, 0.8, 15);
-    mazeLight3.position.set(5, 4, -23.5);
+    // Main corridor east
+    const mazeLight3 = new THREE.PointLight(0xffcc88, 0.8, 18);
+    mazeLight3.position.set(7, 4, -27.5);
     scene.add(mazeLight3);
     mazeLights.push(mazeLight3);
 
     // Room 1 (west alcove): red/orange
-    const mazeLight4 = new THREE.PointLight(0xff6644, 0.6, 8);
-    mazeLight4.position.set(-10, 4, -23.5);
+    const mazeLight4 = new THREE.PointLight(0xff6644, 0.6, 12);
+    mazeLight4.position.set(-15, 4, -27.5);
     scene.add(mazeLight4);
     mazeLights.push(mazeLight4);
 
     // Room 2 (east alcove): cool blue
-    const mazeLight5 = new THREE.PointLight(0x4488ff, 0.6, 8);
-    mazeLight5.position.set(10, 4, -23.5);
+    const mazeLight5 = new THREE.PointLight(0x4488ff, 0.6, 12);
+    mazeLight5.position.set(15, 4, -27.5);
     scene.add(mazeLight5);
     mazeLights.push(mazeLight5);
 
     // Deep west: dim green
-    const mazeLight6 = new THREE.PointLight(0x44cc44, 0.4, 8);
-    mazeLight6.position.set(-7, 4, -27);
+    const mazeLight6 = new THREE.PointLight(0x44cc44, 0.5, 12);
+    mazeLight6.position.set(-12, 4, -35);
     scene.add(mazeLight6);
     mazeLights.push(mazeLight6);
 
     // Deep east: dim purple
-    const mazeLight7 = new THREE.PointLight(0x8844cc, 0.4, 8);
-    mazeLight7.position.set(8, 4, -27);
+    const mazeLight7 = new THREE.PointLight(0x8844cc, 0.5, 12);
+    mazeLight7.position.set(13, 4, -35);
     scene.add(mazeLight7);
     mazeLights.push(mazeLight7);
 
     // Center deep: cold blue
-    const mazeLight8 = new THREE.PointLight(0x4466aa, 0.4, 8);
-    mazeLight8.position.set(1, 4, -30);
+    const mazeLight8 = new THREE.PointLight(0x4466aa, 0.5, 12);
+    mazeLight8.position.set(1, 4, -40);
     scene.add(mazeLight8);
     mazeLights.push(mazeLight8);
 
-    // Deep south: dim amber
-    const mazeLight9 = new THREE.PointLight(0xffaa66, 0.3, 6);
-    mazeLight9.position.set(-8, 4, -30.5);
+    // Deep south west alcove
+    const mazeLight9 = new THREE.PointLight(0xffaa66, 0.4, 10);
+    mazeLight9.position.set(-12, 4, -42);
     scene.add(mazeLight9);
     mazeLights.push(mazeLight9);
 
-    const mazeLight10 = new THREE.PointLight(0xffaa66, 0.3, 6);
-    mazeLight10.position.set(9, 4, -30.5);
+    // Deep south east alcove
+    const mazeLight10 = new THREE.PointLight(0xffaa66, 0.4, 10);
+    mazeLight10.position.set(13, 4, -42);
     scene.add(mazeLight10);
     mazeLights.push(mazeLight10);
 
@@ -1468,6 +1582,7 @@ const WanderingMuseum = ({ onComplete }) => {
     let pointerLockSupported = true;
     let skipNextClick = false;
     let gamepadIndex = null;
+    let gamepadAWasPressed = false;
 
     // Gamepad detection
     const onGamepadConnected = (e) => {
@@ -1565,114 +1680,100 @@ const WanderingMuseum = ({ onComplete }) => {
       }
     };
 
-    const onClick = (e) => {
-      // Skip if we just initiated pointer lock
-      if (!mobile && pointerLockSupported && !pointerLocked) {
-        return;
-      }
-      // Skip the click that triggered pointer lock acquisition
-      if (skipNextClick) {
-        skipNextClick = false;
-        return;
-      }
+    // Max interaction distance
+    const maxInteractDistance = 8;
 
-      // Raycast to check for art pieces
+    // Shared function to find what piece the player is looking at within range
+    const findTargetPiece = () => {
       const raycaster = new THREE.Raycaster();
-      
-      // Use center of screen if pointer locked, otherwise use mouse position
-      let rayOrigin;
-      if (pointerLocked || !pointerLockSupported) {
-        rayOrigin = new THREE.Vector2(0, 0); // Center of screen
-      } else {
-        rayOrigin = new THREE.Vector2(
-          (e.clientX / window.innerWidth) * 2 - 1,
-          -(e.clientY / window.innerHeight) * 2 + 1
-        );
-      }
-      
-      raycaster.setFromCamera(rayOrigin, camera);
-
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const meshes = artPieces.map(p => p.mesh);
       const intersects = raycaster.intersectObjects(meshes, true);
 
-      if (intersects.length > 0) {
+      if (intersects.length > 0 && intersects[0].distance <= maxInteractDistance) {
         const clickedMesh = intersects[0].object;
-        const artPiece = artPieces.find(p => 
-          p.mesh === clickedMesh || clickedMesh.traverseAncestors && (() => { let found = false; let obj = clickedMesh; while (obj) { if (obj === p.mesh) { found = true; break; } obj = obj.parent; } return found; })()
+        const artPiece = artPieces.find(p => {
+          let obj = clickedMesh;
+          while (obj) {
+            if (obj === p.mesh) return true;
+            obj = obj.parent;
+          }
+          return false;
+        });
+        return artPiece || null;
+      }
+      return null;
+    };
+
+    // Shared activation logic
+    const activatePiece = (artPiece) => {
+      if (!artPiece || artPiece.examined) return;
+
+      artPiece.examined = true;
+      gameStateRef.current.artPiecesExamined.add(artPiece.id);
+      setExaminedCount(gameStateRef.current.artPiecesExamined.size);
+
+      if (artPiece.isHidden) {
+        gameStateRef.current.hiddenAreasFound.add(artPiece.id);
+      }
+
+      // Special handling for the trip button
+      if (artPiece.isButton) {
+        gameStateRef.current.trippedBalls = true;
+        setIsTripping(true);
+        tripStartTime = performance.now();
+
+        const randomX = (Math.random() - 0.5) * 30; // -15 to 15
+        const randomZ = (Math.random() - 0.5) * 30; // -15 to 15 (main room only)
+        camera.position.set(
+          Math.max(-19, Math.min(19, randomX)),
+          1.6,
+          Math.max(-19, Math.min(19, randomZ))
         );
+        yaw = Math.random() * Math.PI * 2;
+        pitch = (Math.random() - 0.5) * 0.5;
 
-        if (artPiece && !artPiece.examined) {
-          artPiece.examined = true;
-          gameStateRef.current.artPiecesExamined.add(artPiece.id);
-          setExaminedCount(gameStateRef.current.artPiecesExamined.size);
-
-          if (artPiece.isHidden) {
-            gameStateRef.current.hiddenAreasFound.add(artPiece.id);
-          }
-
-          // Special handling for the trip button
-          if (artPiece.isButton) {
-            gameStateRef.current.trippedBalls = true;
-            setIsTripping(true);
-            tripStartTime = performance.now(); // Record when trip started
-            
-            // Teleport to random position and orientation
-            const randomX = (Math.random() - 0.5) * 30; // -15 to 15
-            const randomZ = (Math.random() - 0.5) * 30; // -15 to 15
-            camera.position.set(randomX, 1.6, randomZ);
-            
-            // Random yaw (spin around)
-            yaw = Math.random() * Math.PI * 2;
-            // Random pitch (look up/down slightly)
-            pitch = (Math.random() - 0.5) * 0.5; // -0.25 to 0.25 radians
-            
-            console.log(`🌀 Teleported to: (${randomX.toFixed(2)}, ${randomZ.toFixed(2)}) facing ${(yaw * 180 / Math.PI).toFixed(0)}°`);
-            
-            // Button press animation
-            if (artPiece.buttonMesh) {
-              artPiece.buttonMesh.position.y = 1.08;
-              setTimeout(() => {
-                artPiece.buttonMesh.position.y = 1.13;
-              }, 200);
-            }
-          }
-
-          // Visual feedback - pulse emissive
-          const feedbackMesh = artPiece.artMesh || artPiece.mesh;
-          const feedbackMat = feedbackMesh.material;
-          if (feedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
-            const originalEmissive = feedbackMat.emissive?.getHex() || 0x000000;
-            feedbackMat.emissive = new THREE.Color(0xffffff);
-            setTimeout(() => {
-              if (feedbackMat) {
-                feedbackMat.emissive = new THREE.Color(originalEmissive);
-              }
-            }, 300);
-          }
-
-          // Start tracking time for this piece
-          gameStateRef.current.timeSpentPerPiece[artPiece.id] = Date.now();
-
-          // Check for sober completion (all 7 regular objects found, not tripping)
-          const regularObjects = artPieces.filter(p => !p.isButton && !p.isTripExit).length;
-          const foundRegular = Array.from(gameStateRef.current.artPiecesExamined).filter(
-            id => id !== 'tripButton' && id !== 'tripPortal'
-          ).length;
-          
-          console.log('Click - Sober completion check:', {
-            regularObjects,
-            foundRegular,
-            isTripping: trippingRef.current,
-            examined: Array.from(gameStateRef.current.artPiecesExamined)
-          });
-          
-          if (foundRegular === regularObjects && !trippingRef.current) {
-            console.log('CLICK - SOBER COMPLETION TRIGGERED!');
-            gameStateRef.current.completionMethod = 'sober';
-            finishGame();
-          }
+        if (artPiece.buttonMesh) {
+          artPiece.buttonMesh.position.y = 1.08;
+          setTimeout(() => { artPiece.buttonMesh.position.y = 1.13; }, 200);
         }
       }
+
+      // Visual feedback - pulse emissive
+      const feedbackMesh = artPiece.artMesh || artPiece.mesh;
+      const feedbackMat = feedbackMesh.material;
+      if (feedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
+        const originalEmissive = feedbackMat.emissive?.getHex() || 0x000000;
+        feedbackMat.emissive = new THREE.Color(0xffffff);
+        setTimeout(() => {
+          if (feedbackMat) feedbackMat.emissive = new THREE.Color(originalEmissive);
+        }, 300);
+      }
+
+      gameStateRef.current.timeSpentPerPiece[artPiece.id] = Date.now();
+
+      // Check for sober completion
+      const regularObjects = artPieces.filter(p => !p.isButton && !p.isTripExit).length;
+      const foundRegular = Array.from(gameStateRef.current.artPiecesExamined).filter(
+        id => id !== 'tripButton' && id !== 'tripPortal'
+      ).length;
+
+      if (foundRegular === regularObjects && !trippingRef.current) {
+        gameStateRef.current.completionMethod = 'sober';
+        setTimeout(() => finishGame(), 500);
+      }
+    };
+
+    // Hover glow tracking
+    let hoveredPiece = null;
+    let hoveredOriginalEmissive = null;
+
+    const onClick = (e) => {
+      if (!mobile && pointerLockSupported && !pointerLocked) return;
+      if (skipNextClick) { skipNextClick = false; return; }
+
+      const target = findTargetPiece();
+      if (target) activatePiece(target);
     };
 
     // Touch controls for mobile
@@ -1749,6 +1850,7 @@ const WanderingMuseum = ({ onComplete }) => {
       orthoCamera.updateProjectionMatrix();
       
       renderer.setSize(window.innerWidth, window.innerHeight);
+      portalOverlayMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
 
@@ -1840,99 +1942,12 @@ const WanderingMuseum = ({ onComplete }) => {
           }
           
           // A button (button 0) - interact with art
-          if (gamepad.buttons[0]?.pressed && !gamepad.buttons[0].wasPressed) {
-            // Mark as pressed to avoid repeated triggers
-            gamepad.buttons[0].wasPressed = true;
-            
-            // Raycast from center of screen
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            const meshes = artPieces.map(p => p.mesh);
-            const intersects = raycaster.intersectObjects(meshes, true);
-            
-            if (intersects.length > 0) {
-              const clickedMesh = intersects[0].object;
-              const artPiece = artPieces.find(p => 
-                p.mesh === clickedMesh || clickedMesh.traverseAncestors && (() => { let found = false; let obj = clickedMesh; while (obj) { if (obj === p.mesh) { found = true; break; } obj = obj.parent; } return found; })()
-              );
-              
-              if (artPiece && !artPiece.examined) {
-                artPiece.examined = true;
-                gameStateRef.current.artPiecesExamined.add(artPiece.id);
-                setExaminedCount(gameStateRef.current.artPiecesExamined.size);
-
-                if (artPiece.isHidden) {
-                  gameStateRef.current.hiddenAreasFound.add(artPiece.id);
-                }
-
-                // Special handling for the trip button
-                if (artPiece.isButton) {
-                  gameStateRef.current.trippedBalls = true;
-                  setIsTripping(true);
-                  tripStartTime = performance.now(); // Record when trip started
-                  
-                  // Teleport to random position and orientation
-                  const randomX = (Math.random() - 0.5) * 30; // -15 to 15
-                  const randomZ = (Math.random() - 0.5) * 30; // -15 to 15
-                  camera.position.set(randomX, 1.6, randomZ);
-                  
-                  // Random yaw (spin around)
-                  yaw = Math.random() * Math.PI * 2;
-                  // Random pitch (look up/down slightly)
-                  pitch = (Math.random() - 0.5) * 0.5; // -0.25 to 0.25 radians
-                  
-                  console.log(`🌀 Teleported to: (${randomX.toFixed(2)}, ${randomZ.toFixed(2)}) facing ${(yaw * 180 / Math.PI).toFixed(0)}°`);
-                  
-                  // Button press animation
-                  if (artPiece.buttonMesh) {
-                    artPiece.buttonMesh.position.y = 1.08;
-                    setTimeout(() => {
-                      artPiece.buttonMesh.position.y = 1.13;
-                    }, 200);
-                  }
-                }
-                
-                // Visual feedback for regular art pieces
-                const gpFeedbackMesh = artPiece.artMesh || artPiece.mesh;
-                const gpFeedbackMat = gpFeedbackMesh.material;
-                if (gpFeedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
-                  const originalEmissive = gpFeedbackMat.emissive?.getHex() || 0x000000;
-                  gpFeedbackMat.emissive = new THREE.Color(0xffffff);
-                  setTimeout(() => {
-                    if (gpFeedbackMat) {
-                      gpFeedbackMat.emissive = new THREE.Color(originalEmissive);
-                    }
-                  }, 300);
-                }
-                
-                gameStateRef.current.timeSpentPerPiece[artPiece.id] = Date.now();
-
-                // Check for sober completion
-                const regularObjects = artPieces.filter(p => !p.isButton && !p.isTripExit).length;
-                const foundRegular = Array.from(gameStateRef.current.artPiecesExamined).filter(
-                  id => id !== 'tripButton' && id !== 'tripPortal'
-                ).length;
-                
-                console.log('Gamepad - Sober completion check:', {
-                  regularObjects,
-                  foundRegular,
-                  isTripping: trippingRef.current,
-                  examined: Array.from(gameStateRef.current.artPiecesExamined)
-                });
-                
-                if (foundRegular === regularObjects && !trippingRef.current) {
-                  console.log('GAMEPAD - SOBER COMPLETION TRIGGERED!');
-                  gameStateRef.current.completionMethod = 'sober';
-                  setTimeout(() => finishGame(), 500);
-                }
-              }
-            }
+          const aPressed = gamepad.buttons[0]?.pressed;
+          if (aPressed && !gamepadAWasPressed) {
+            const target = findTargetPiece();
+            if (target) activatePiece(target);
           }
-          
-          // Reset wasPressed flag when button is released
-          if (!gamepad.buttons[0]?.pressed) {
-            gamepad.buttons[0].wasPressed = false;
-          }
+          gamepadAWasPressed = aPressed;
         }
       }
 
@@ -2033,8 +2048,14 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Constrain player within horizontal bounds
-      camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
-      camera.position.z = Math.max(-31.5, Math.min(19, camera.position.z));
+      // When tripping, keep player in main room only (no maze access)
+      if (trippingRef.current) {
+        camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
+        camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
+      } else {
+        camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
+        camera.position.z = Math.max(-45.5, Math.min(19, camera.position.z));
+      }
 
       // Track path
       if (gameStateRef.current.pathTaken.length === 0 || 
@@ -2044,6 +2065,51 @@ const WanderingMuseum = ({ onComplete }) => {
           z: camera.position.z,
           time: currentTime
         });
+      }
+
+      // Hover glow: check what piece the player is looking at within range
+      const hoverTarget = findTargetPiece();
+      if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
+        // New hover target
+        if (hoveredPiece !== hoverTarget) {
+          // Restore previous hover
+          if (hoveredPiece && hoveredOriginalEmissive !== null) {
+            const prevMesh = hoveredPiece.artMesh || hoveredPiece.mesh;
+            const prevMat = prevMesh.material;
+            if (prevMat && prevMat.emissive) {
+              prevMat.emissive.setHex(hoveredOriginalEmissive);
+              prevMat.emissiveIntensity = hoveredPiece._origEmissiveIntensity || 0;
+            }
+          }
+          // Set new hover glow
+          hoveredPiece = hoverTarget;
+          const hMesh = hoverTarget.artMesh || hoverTarget.mesh;
+          const hMat = hMesh.material;
+          if (hMat && hMat.emissive) {
+            hoveredOriginalEmissive = hMat.emissive.getHex();
+            hoverTarget._origEmissiveIntensity = hMat.emissiveIntensity || 0;
+            hMat.emissive.setHex(0xffffff);
+            hMat.emissiveIntensity = 0.3;
+          } else {
+            hoveredOriginalEmissive = null;
+          }
+          const action = hoverTarget.isButton ? 'to trip balls' : 'to examine';
+          const inputHint = gamepadIndex !== null ? `press A ${action}` : `click ${action}`;
+          setInteractPrompt({ name: '', inputHint });
+        }
+      } else {
+        // No valid target — clear hover
+        if (hoveredPiece) {
+          const prevMesh = hoveredPiece.artMesh || hoveredPiece.mesh;
+          const prevMat = prevMesh.material;
+          if (prevMat && prevMat.emissive && hoveredOriginalEmissive !== null) {
+            prevMat.emissive.setHex(hoveredOriginalEmissive);
+            prevMat.emissiveIntensity = hoveredPiece._origEmissiveIntensity || 0;
+          }
+          hoveredPiece = null;
+          hoveredOriginalEmissive = null;
+          setInteractPrompt(null);
+        }
       }
 
       // Rotate art pieces that are being examined (just the art, not the pedestal)
@@ -2095,7 +2161,7 @@ const WanderingMuseum = ({ onComplete }) => {
         });
 
         // Check alignment - now checking 3D box
-        const boxTolerance = { x: 2.0, y: 5.0, z: 15.0 }; // Box: 4 wide, 10 tall, 30 deep
+        const boxTolerance = { x: 2.0, y: 5.0, z: 20.0 }; // Box: 4 wide, 10 tall, spans full Z
         const boxCenter = { x: 0, y: 5, z: 0 };
         const angleTolerance = 0.15; // About 8.6 degrees
         
@@ -2150,12 +2216,10 @@ const WanderingMuseum = ({ onComplete }) => {
             circle.material.opacity = pulse;
           });
           
-          // Portal appears and grows as you stay aligned
+          // Portal overlay intensifies as you stay aligned
           const progressRatio = Math.min(1, alignmentTimeRef.current / alignmentRequired);
-          portalMesh.visible = true;
-          portalMaterial.opacity = progressRatio * 0.9;
-          portalLight.intensity = progressRatio * 5;
-          portalMesh.scale.setScalar(0.5 + progressRatio * 1.5);
+          portalOverlayQuad.visible = true;
+          portalOverlayMaterial.uniforms.intensity.value = progressRatio;
           
           // Complete when fully aligned for required time
           if (alignmentTimeRef.current >= alignmentRequired) {
@@ -2165,13 +2229,15 @@ const WanderingMuseum = ({ onComplete }) => {
           }
         } else {
           setAlignmentProgress(0);
-          // Fade portal out when not aligned
-          portalMaterial.opacity = Math.max(0, portalMaterial.opacity - deltaTime * 2);
-          portalLight.intensity = Math.max(0, portalLight.intensity - deltaTime * 5);
+          // Fade portal overlay out when not aligned
+          portalOverlayMaterial.uniforms.intensity.value = Math.max(0, portalOverlayMaterial.uniforms.intensity.value - deltaTime * 2);
+          if (portalOverlayMaterial.uniforms.intensity.value <= 0) {
+            portalOverlayQuad.visible = false;
+          }
         }
-        
-        portalMesh.rotation.y += 0.02;
-        portalMesh.rotation.x += 0.01;
+
+        // Update portal shader time
+        portalOverlayMaterial.uniforms.time.value = (currentTime - tripStartTime) / 1000;
       } else {
         // Show walls, ceiling when not tripping
         outerWalls.forEach(wall => wall.visible = true);
@@ -2203,9 +2269,8 @@ const WanderingMuseum = ({ onComplete }) => {
           circle.material.opacity = 0;
           circle.mesh.visible = false;
         });
-        portalMaterial.opacity = 0;
-        portalMesh.visible = false;
-        portalLight.intensity = 0;
+        portalOverlayQuad.visible = false;
+        portalOverlayMaterial.uniforms.intensity.value = 0;
         setIsAligned(false);
         wasAlignedRef.current = false;
         alignmentTimeRef.current = 0;
@@ -2228,16 +2293,22 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Render with or without post-processing
-      // Always use post-processing when tripping (for debugging)
       if (trippingRef.current || tripShaderMaterial.uniforms.intensity.value > 0.01) {
         // Render to texture
         renderer.setRenderTarget(renderTarget);
         renderer.render(scene, activeCamera);
-        
+
         // Apply post-processing
         tripShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
         renderer.setRenderTarget(null);
         renderer.render(tripScene, tripCamera);
+
+        // Portal glow overlay (additive, on top of trip effect)
+        if (portalOverlayQuad.visible) {
+          renderer.autoClear = false;
+          renderer.render(portalOverlayScene, portalOverlayCamera);
+          renderer.autoClear = true;
+        }
       } else {
         // Normal render
         renderer.render(scene, activeCamera);
@@ -2482,7 +2553,7 @@ const WanderingMuseum = ({ onComplete }) => {
               <div style={{
                 width: '20px',
                 height: '2px',
-                background: 'rgba(255,255,255,0.5)',
+                background: interactPrompt ? 'rgba(255,255,100,0.8)' : 'rgba(255,255,255,0.5)',
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
@@ -2491,12 +2562,31 @@ const WanderingMuseum = ({ onComplete }) => {
               <div style={{
                 width: '2px',
                 height: '20px',
-                background: 'rgba(255,255,255,0.5)',
+                background: interactPrompt ? 'rgba(255,255,100,0.8)' : 'rgba(255,255,255,0.5)',
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
                 transform: 'translate(-50%, -50%)'
               }} />
+            </div>
+          )}
+
+          {/* Interact prompt */}
+          {interactPrompt && (
+            <div style={{
+              position: 'absolute',
+              top: '58%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: 'rgba(255,255,200,0.9)',
+              fontSize: '14px',
+              fontFamily: 'system-ui, sans-serif',
+              fontWeight: '300',
+              textShadow: '0 0 8px rgba(0,0,0,0.8)',
+              pointerEvents: 'none',
+              letterSpacing: '1px'
+            }}>
+              {interactPrompt.inputHint}
             </div>
           )}
 
