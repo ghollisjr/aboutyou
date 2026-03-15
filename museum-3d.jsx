@@ -511,53 +511,133 @@ const WanderingMuseum = ({ onComplete }) => {
   }
 
   function createGyroid(scale = 0.8, resolution = 30) {
-    const geometry = new THREE.BufferGeometry();
+    // Marching cubes isosurface extraction of the gyroid:
+    // cos(x)sin(y) + cos(y)sin(z) + cos(z)sin(x) = 0
+    const gridSize = resolution;
+    const domain = 2 * Math.PI;
+    const step = domain / gridSize;
+
+    function gyroidField(x, y, z) {
+      return Math.cos(x) * Math.sin(y) + Math.cos(y) * Math.sin(z) + Math.cos(z) * Math.sin(x);
+    }
+
+    function gyroidGradient(x, y, z) {
+      const nx = -Math.sin(x) * Math.sin(y) + Math.cos(z) * Math.cos(x);
+      const ny = Math.cos(x) * Math.cos(y) - Math.sin(y) * Math.sin(z);
+      const nz = Math.cos(y) * Math.cos(z) - Math.sin(z) * Math.sin(x);
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      return [nx / len, ny / len, nz / len];
+    }
+
+    // Marching tetrahedra: split each cube into 6 tetrahedra, extract triangles
+    // More robust than marching cubes, no lookup table needed
+    const n = gridSize + 1;
+    const origin = -domain / 2;
+
+    // Sample field
+    const field = new Float32Array(n * n * n);
+    for (let iz = 0; iz < n; iz++)
+      for (let iy = 0; iy < n; iy++)
+        for (let ix = 0; ix < n; ix++)
+          field[iz * n * n + iy * n + ix] = gyroidField(origin + ix * step, origin + iy * step, origin + iz * step);
+
+    const getField = (ix, iy, iz) => field[iz * n * n + iy * n + ix];
+    const getPos = (ix, iy, iz) => [origin + ix * step, origin + iy * step, origin + iz * step];
+
     const vertices = [];
-    const indices = [];
     const normals = [];
 
-    // Sample gyroid isosurface using marching approach
-    const size = 2 * Math.PI;
-    const step = size / resolution;
+    // Interpolate zero crossing between two points
+    function interpVertex(p0, v0, p1, v1) {
+      const t = v0 / (v0 - v1);
+      const x = p0[0] + t * (p1[0] - p0[0]);
+      const y = p0[1] + t * (p1[1] - p0[1]);
+      const z = p0[2] + t * (p1[2] - p0[2]);
+      return [x, y, z];
+    }
 
-    for (let i = 0; i <= resolution; i++) {
-      for (let j = 0; j <= resolution; j++) {
-        const u = (i / resolution) * 2 * Math.PI;
-        const v = (j / resolution) * 2 * Math.PI;
-        // Parametric approximation of gyroid surface
-        const x = Math.cos(u) * Math.sin(v);
-        const y = Math.cos(v) * Math.sin(u + v);
-        const z = Math.cos(u + v) * Math.sin(u);
-        vertices.push(x * scale, y * scale, z * scale);
+    // Process one tetrahedron: 4 vertices with positions and field values
+    function processTetra(p, v) {
+      // Classify vertices as inside (< 0) or outside (>= 0)
+      let idx = 0;
+      for (let i = 0; i < 4; i++) if (v[i] < 0) idx |= (1 << i);
+      if (idx === 0 || idx === 15) return; // all same sign
 
-        // Approximate normal
-        const eps = 0.01;
-        const xu = Math.cos(u + eps) * Math.sin(v) - x;
-        const yu = Math.cos(v) * Math.sin(u + eps + v) - y;
-        const zu = Math.cos(u + eps + v) * Math.sin(u + eps) - z;
-        const xv = Math.cos(u) * Math.sin(v + eps) - x;
-        const yv = Math.cos(v + eps) * Math.sin(u + v + eps) - y;
-        const zv = Math.cos(u + v + eps) * Math.sin(u) - z;
-        let nx = yu * zv - zu * yv;
-        let ny = zu * xv - xu * zv;
-        let nz = xu * yv - yu * xv;
-        const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-        normals.push(nx / len, ny / len, nz / len);
+      // Generate triangles for each of the 14 non-trivial cases
+      // By symmetry, we only need to handle idx <= 7 (complement gives flipped winding)
+      let flip = false;
+      if (idx > 7) { idx = 15 - idx; flip = true; }
+
+      const emitTri = (a, b, c) => {
+        const s = scale / (domain / 2);
+        const pts = flip ? [c, b, a] : [a, b, c];
+        for (const pt of pts) {
+          vertices.push(pt[0] * s, pt[1] * s, pt[2] * s);
+          const grad = gyroidGradient(pt[0], pt[1], pt[2]);
+          normals.push(grad[0], grad[1], grad[2]);
+        }
+      };
+
+      // Cases by number of inside vertices (1, 2, or 3 via complement)
+      if (idx === 1) { // vertex 0 inside
+        emitTri(interpVertex(p[0],v[0],p[1],v[1]), interpVertex(p[0],v[0],p[2],v[2]), interpVertex(p[0],v[0],p[3],v[3]));
+      } else if (idx === 2) { // vertex 1 inside
+        emitTri(interpVertex(p[1],v[1],p[0],v[0]), interpVertex(p[1],v[1],p[3],v[3]), interpVertex(p[1],v[1],p[2],v[2]));
+      } else if (idx === 4) { // vertex 2 inside
+        emitTri(interpVertex(p[2],v[2],p[0],v[0]), interpVertex(p[2],v[2],p[1],v[1]), interpVertex(p[2],v[2],p[3],v[3]));
+      } else if (idx === 8 - 8) { /* handled by complement */ }
+      else if (idx === 3) { // vertices 0,1 inside
+        const a = interpVertex(p[0],v[0],p[2],v[2]);
+        const b = interpVertex(p[0],v[0],p[3],v[3]);
+        const c = interpVertex(p[1],v[1],p[3],v[3]);
+        const d = interpVertex(p[1],v[1],p[2],v[2]);
+        emitTri(a, b, c); emitTri(a, c, d);
+      } else if (idx === 5) { // vertices 0,2 inside
+        const a = interpVertex(p[0],v[0],p[1],v[1]);
+        const b = interpVertex(p[0],v[0],p[3],v[3]);
+        const c = interpVertex(p[2],v[2],p[3],v[3]);
+        const d = interpVertex(p[2],v[2],p[1],v[1]);
+        emitTri(a, b, c); emitTri(a, c, d);
+      } else if (idx === 6) { // vertices 1,2 inside
+        const a = interpVertex(p[1],v[1],p[0],v[0]);
+        const b = interpVertex(p[1],v[1],p[3],v[3]);
+        const c = interpVertex(p[2],v[2],p[3],v[3]);
+        const d = interpVertex(p[2],v[2],p[0],v[0]);
+        emitTri(a, b, c); emitTri(a, c, d);
+      } else if (idx === 7) { // vertices 0,1,2 inside (vertex 3 outside)
+        emitTri(interpVertex(p[0],v[0],p[3],v[3]), interpVertex(p[2],v[2],p[3],v[3]), interpVertex(p[1],v[1],p[3],v[3]));
       }
     }
 
-    for (let i = 0; i < resolution; i++) {
-      for (let j = 0; j < resolution; j++) {
-        const a = i * (resolution + 1) + j;
-        const b = a + resolution + 1;
-        const c = a + 1;
-        const d = b + 1;
-        indices.push(a, b, c);
-        indices.push(c, b, d);
+    // Cube corner indices (local)
+    const cubeCorners = [
+      [0,0,0],[1,0,0],[1,1,0],[0,1,0],
+      [0,0,1],[1,0,1],[1,1,1],[0,1,1]
+    ];
+    // 6 tetrahedra decomposition of a cube (consistent orientation)
+    const tetIndices = [
+      [0,1,3,5],[1,2,3,5],[2,3,5,6],[3,5,6,7],[0,3,4,5],[3,4,5,7]
+    ];
+
+    for (let iz = 0; iz < gridSize; iz++) {
+      for (let iy = 0; iy < gridSize; iy++) {
+        for (let ix = 0; ix < gridSize; ix++) {
+          // Get 8 corner positions and field values
+          const cPos = cubeCorners.map(c => getPos(ix+c[0], iy+c[1], iz+c[2]));
+          const cVal = cubeCorners.map(c => getField(ix+c[0], iy+c[1], iz+c[2]));
+
+          // Process 6 tetrahedra
+          for (const tet of tetIndices) {
+            processTetra(
+              [cPos[tet[0]], cPos[tet[1]], cPos[tet[2]], cPos[tet[3]]],
+              [cVal[tet[0]], cVal[tet[1]], cVal[tet[2]], cVal[tet[3]]]
+            );
+          }
+        }
       }
     }
 
-    geometry.setIndex(indices);
+    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
 
@@ -568,8 +648,7 @@ const WanderingMuseum = ({ onComplete }) => {
       side: THREE.DoubleSide
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    return mesh;
+    return new THREE.Mesh(geometry, material);
   }
 
   function createSaddleSurface(scale = 0.8, resolution = 20) {
