@@ -197,6 +197,330 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
+  // --- Maze Geometry Builders ---
+
+  function createSierpinskiTetrahedron(level = 2, size = 1) {
+    const group = new THREE.Group();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff6644,
+      roughness: 0.4,
+      metalness: 0.3,
+      flatShading: true
+    });
+
+    function addTetra(cx, cy, cz, s, lvl) {
+      if (lvl === 0) {
+        const geom = new THREE.TetrahedronGeometry(s);
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.position.set(cx, cy, cz);
+        group.add(mesh);
+        // Edge lines
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geom),
+          new THREE.LineBasicMaterial({ color: 0xffaa88 })
+        );
+        mesh.add(edges);
+        return;
+      }
+      const hs = s / 2;
+      const h = s * Math.sqrt(2 / 3);
+      const hh = h / 2;
+      // 4 sub-tetrahedra at vertices
+      const off = hs * 0.5;
+      addTetra(cx, cy + hh * 0.5, cz, hs, lvl - 1); // top
+      addTetra(cx - off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
+      addTetra(cx + off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
+      addTetra(cx, cy - hh * 0.5, cz + off * 1.155, hs, lvl - 1);
+    }
+
+    addTetra(0, 0, 0, size, level);
+    return group;
+  }
+
+  function createStellaOctangula(size = 1) {
+    const group = new THREE.Group();
+
+    const mat1 = new THREE.MeshStandardMaterial({
+      color: 0x4488ff,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.2,
+      metalness: 0.5,
+      side: THREE.DoubleSide
+    });
+    const mat2 = new THREE.MeshStandardMaterial({
+      color: 0xff44aa,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.2,
+      metalness: 0.5,
+      side: THREE.DoubleSide
+    });
+
+    const geom1 = new THREE.TetrahedronGeometry(size);
+    const mesh1 = new THREE.Mesh(geom1, mat1);
+    group.add(mesh1);
+    mesh1.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(geom1),
+      new THREE.LineBasicMaterial({ color: 0x88bbff })
+    ));
+
+    const geom2 = new THREE.TetrahedronGeometry(size);
+    const mesh2 = new THREE.Mesh(geom2, mat2);
+    mesh2.rotation.x = Math.PI;
+    group.add(mesh2);
+    mesh2.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(geom2),
+      new THREE.LineBasicMaterial({ color: 0xff88cc })
+    ));
+
+    return group;
+  }
+
+  function createLorenzAttractor() {
+    const points = [];
+    const colors = [];
+    let x = 0.1, y = 0, z = 0;
+    const dt = 0.005;
+    const sigma = 10, rho = 28, beta = 8 / 3;
+    const numPoints = 8000;
+
+    for (let i = 0; i < numPoints; i++) {
+      const dx = sigma * (y - x) * dt;
+      const dy = (x * (rho - z) - y) * dt;
+      const dz = (x * y - beta * z) * dt;
+      x += dx; y += dy; z += dz;
+      points.push(x * 0.03, z * 0.03 - 0.8, y * 0.03); // scale and center
+
+      // Warm→cool gradient
+      const t = i / numPoints;
+      colors.push(1 - t * 0.5, 0.3 + t * 0.3, t);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 1 });
+    return new THREE.Line(geometry, material);
+  }
+
+  function createFiveCubes(size = 0.7) {
+    const group = new THREE.Group();
+    const cubeColors = [0xff4444, 0x44ff44, 0x4444ff, 0xffff44, 0xff44ff];
+    const goldenAngle = Math.PI / 5; // 36 degrees
+
+    for (let i = 0; i < 5; i++) {
+      const geom = new THREE.BoxGeometry(size, size, size);
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geom),
+        new THREE.LineBasicMaterial({ color: cubeColors[i], linewidth: 1 })
+      );
+      // Each cube rotated by golden angle increments around different axes
+      edges.rotation.x = goldenAngle * i;
+      edges.rotation.y = goldenAngle * i * 1.5;
+      edges.rotation.z = goldenAngle * i * 0.7;
+      group.add(edges);
+    }
+    return group;
+  }
+
+  function createTrefoilKnot() {
+    class TrefoilCurve extends THREE.Curve {
+      getPoint(t) {
+        const s = t * Math.PI * 2;
+        const x = Math.sin(s) + 2 * Math.sin(2 * s);
+        const y = Math.cos(s) - 2 * Math.cos(2 * s);
+        const z = -Math.sin(3 * s);
+        return new THREE.Vector3(x, y, z).multiplyScalar(0.35);
+      }
+    }
+
+    const path = new TrefoilCurve();
+    const geometry = new THREE.TubeGeometry(path, 128, 0.08, 16, true);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x22ccaa,
+      roughness: 0.05,
+      metalness: 0.95
+    });
+    return new THREE.Mesh(geometry, material);
+  }
+
+  function createMengerSponge(level = 2, size = 1) {
+    const group = new THREE.Group();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xddaa33,
+      roughness: 0.3,
+      metalness: 0.6
+    });
+
+    function addCubes(cx, cy, cz, s, lvl) {
+      if (lvl === 0) {
+        const geom = new THREE.BoxGeometry(s, s, s);
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.position.set(cx, cy, cz);
+        group.add(mesh);
+        return;
+      }
+      const ns = s / 3;
+      for (let x = -1; x <= 1; x++) {
+        for (let y = -1; y <= 1; y++) {
+          for (let z = -1; z <= 1; z++) {
+            // Skip center of each face and absolute center
+            const absSum = (x === 0 ? 1 : 0) + (y === 0 ? 1 : 0) + (z === 0 ? 1 : 0);
+            if (absSum >= 2) continue; // Remove center cross
+            addCubes(cx + x * ns, cy + y * ns, cz + z * ns, ns, lvl - 1);
+          }
+        }
+      }
+    }
+
+    addCubes(0, 0, 0, size, level);
+    return group;
+  }
+
+  function createHopfFibration() {
+    const group = new THREE.Group();
+    const numFibers = 12;
+
+    for (let i = 0; i < numFibers; i++) {
+      const hue = i / numFibers;
+      const color = new THREE.Color().setHSL(hue, 0.8, 0.5);
+      const material = new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: 0.2,
+        metalness: 0.8
+      });
+
+      const theta = (i / numFibers) * Math.PI * 2;
+      const phi = (i / numFibers) * Math.PI;
+      const r = 0.6;
+
+      const torusGeom = new THREE.TorusGeometry(0.3, 0.03, 16, 48);
+      const torus = new THREE.Mesh(torusGeom, material);
+      torus.position.set(
+        r * Math.cos(theta) * Math.sin(phi),
+        r * Math.sin(theta) * Math.sin(phi),
+        r * Math.cos(phi)
+      );
+      torus.rotation.set(theta, phi, theta * 0.5);
+      group.add(torus);
+    }
+
+    return group;
+  }
+
+  function createGyroid(scale = 0.8, resolution = 30) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const indices = [];
+    const normals = [];
+
+    // Sample gyroid isosurface using marching approach
+    const size = 2 * Math.PI;
+    const step = size / resolution;
+
+    for (let i = 0; i <= resolution; i++) {
+      for (let j = 0; j <= resolution; j++) {
+        const u = (i / resolution) * 2 * Math.PI;
+        const v = (j / resolution) * 2 * Math.PI;
+        // Parametric approximation of gyroid surface
+        const x = Math.cos(u) * Math.sin(v);
+        const y = Math.cos(v) * Math.sin(u + v);
+        const z = Math.cos(u + v) * Math.sin(u);
+        vertices.push(x * scale, y * scale, z * scale);
+
+        // Approximate normal
+        const eps = 0.01;
+        const xu = Math.cos(u + eps) * Math.sin(v) - x;
+        const yu = Math.cos(v) * Math.sin(u + eps + v) - y;
+        const zu = Math.cos(u + eps + v) * Math.sin(u + eps) - z;
+        const xv = Math.cos(u) * Math.sin(v + eps) - x;
+        const yv = Math.cos(v + eps) * Math.sin(u + v + eps) - y;
+        const zv = Math.cos(u + v + eps) * Math.sin(u) - z;
+        let nx = yu * zv - zu * yv;
+        let ny = zu * xv - xu * zv;
+        let nz = xu * yv - yu * xv;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        normals.push(nx / len, ny / len, nz / len);
+      }
+    }
+
+    for (let i = 0; i < resolution; i++) {
+      for (let j = 0; j < resolution; j++) {
+        const a = i * (resolution + 1) + j;
+        const b = a + resolution + 1;
+        const c = a + 1;
+        const d = b + 1;
+        indices.push(a, b, c);
+        indices.push(c, b, d);
+      }
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x8844dd,
+      roughness: 0.3,
+      metalness: 0.5,
+      side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    return mesh;
+  }
+
+  function createSaddleSurface(scale = 0.8, resolution = 20) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const indices = [];
+
+    for (let i = 0; i <= resolution; i++) {
+      for (let j = 0; j <= resolution; j++) {
+        const x = (i / resolution - 0.5) * 2;
+        const y = (j / resolution - 0.5) * 2;
+        const z = x * x - y * y;
+        vertices.push(x * scale, z * scale * 0.5, y * scale);
+      }
+    }
+
+    for (let i = 0; i < resolution; i++) {
+      for (let j = 0; j < resolution; j++) {
+        const a = i * (resolution + 1) + j;
+        const b = a + resolution + 1;
+        const c = a + 1;
+        const d = b + 1;
+        indices.push(a, b, c);
+        indices.push(c, b, d);
+      }
+    }
+
+    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
+    const group = new THREE.Group();
+
+    const solidMesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: 0xcc5588,
+      roughness: 0.3,
+      metalness: 0.4,
+      side: THREE.DoubleSide
+    }));
+    group.add(solidMesh);
+
+    // Wireframe overlay
+    const wireframe = new THREE.LineSegments(
+      new THREE.WireframeGeometry(geometry),
+      new THREE.LineBasicMaterial({ color: 0xff88aa, linewidth: 1, transparent: true, opacity: 0.3 })
+    );
+    group.add(wireframe);
+
+    return group;
+  }
+
   useEffect(() => {
     // Detect mobile
     const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -426,18 +750,23 @@ const WanderingMuseum = ({ onComplete }) => {
     });
 
     // Main room walls
+    // Back wall split into two segments with gap for maze entrance
+    const wall1a = new THREE.Mesh(new THREE.BoxGeometry(19, 6, 0.5), wallMaterial);
+    wall1a.position.set(-10.5, 3, -20);
+    scene.add(wall1a);
+
+    const wall1b = new THREE.Mesh(new THREE.BoxGeometry(17, 6, 0.5), wallMaterial);
+    wall1b.position.set(11.5, 3, -20);
+    scene.add(wall1b);
+
     const wallGeometry = new THREE.BoxGeometry(40, 6, 0.5);
-    
-    const wall1 = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall1.position.set(0, 3, -20);
-    scene.add(wall1);
 
     const wall2 = new THREE.Mesh(wallGeometry, wallMaterial);
     wall2.position.set(0, 3, 20);
     scene.add(wall2);
 
     const wallGeometry2 = new THREE.BoxGeometry(0.5, 6, 40);
-    
+
     const wall3 = new THREE.Mesh(wallGeometry2, wallMaterial);
     wall3.position.set(-20, 3, 0);
     scene.add(wall3);
@@ -447,7 +776,7 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(wall4);
 
     // Collect outer walls for visibility control
-    const outerWalls = [wall1, wall2, wall3, wall4];
+    const outerWalls = [wall1a, wall1b, wall2, wall3, wall4];
 
     // Create interior wall with opening (creates hidden area)
     const interiorWallGeometry = new THREE.BoxGeometry(15, 6, 0.5);
@@ -650,6 +979,66 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(kleinPedestal);
     artPieces.push({ mesh: kleinPedestal, artMesh: kleinMesh, id: 'klein', examined: false, rotatable: true, isHidden: true });
 
+    // --- Maze Art Pieces (beyond back wall, Z < -20) ---
+
+    // M1: Sierpinski Tetrahedron — Room 1 west alcove
+    const sierpinskiMesh = createSierpinskiTetrahedron(2, 0.9);
+    const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-10, 0, -23.5));
+    scene.add(sierpinskiPedestal);
+    artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
+
+    // M2: Lorenz Attractor — Room 2 east alcove
+    const lorenzMesh = createLorenzAttractor();
+    const lorenzPedestal = createPedestal('Lorenz Attractor', lorenzMesh, new THREE.Vector3(10, 0, -23.5));
+    scene.add(lorenzPedestal);
+    artPieces.push({ mesh: lorenzPedestal, artMesh: lorenzMesh, id: 'lorenz', examined: false, rotatable: true, isHidden: true });
+
+    // M3: Gyroid Surface — main corridor west
+    const gyroidMesh = createGyroid(0.8, 30);
+    gyroidMesh.material.envMap = envTexture;
+    gyroidMesh.material.envMapIntensity = 0.6;
+    const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(-4, 0, -23.5));
+    scene.add(gyroidPedestal);
+    artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
+
+    // M4: Hyperbolic Paraboloid — main corridor east
+    const saddleMesh = createSaddleSurface(0.8, 20);
+    const saddlePedestal = createPedestal('Hyperbolic Paraboloid', saddleMesh, new THREE.Vector3(5, 0, -23.5));
+    scene.add(saddlePedestal);
+    artPieces.push({ mesh: saddlePedestal, artMesh: saddleMesh, id: 'saddle', examined: false, rotatable: true, isHidden: true });
+
+    // M5: Stella Octangula — deep west room
+    const stellaMesh = createStellaOctangula(0.8);
+    const stellaPedestal = createPedestal('Stella Octangula', stellaMesh, new THREE.Vector3(-7, 0, -27));
+    scene.add(stellaPedestal);
+    artPieces.push({ mesh: stellaPedestal, artMesh: stellaMesh, id: 'stella', examined: false, rotatable: true, isHidden: true });
+
+    // M6: Trefoil Knot — deep west alcove (south of W14)
+    const trefoilMesh = createTrefoilKnot();
+    trefoilMesh.material.envMap = envTexture;
+    trefoilMesh.material.envMapIntensity = 1.0;
+    const trefoilPedestal = createPedestal('Trefoil Knot', trefoilMesh, new THREE.Vector3(-8, 0, -30.5));
+    scene.add(trefoilPedestal);
+    artPieces.push({ mesh: trefoilPedestal, artMesh: trefoilMesh, id: 'trefoil', examined: false, rotatable: true, isHidden: true });
+
+    // M7: Menger Sponge — deep east room
+    const mengerMesh = createMengerSponge(2, 1.2);
+    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(8, 0, -27));
+    scene.add(mengerPedestal);
+    artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
+
+    // M8: Compound of 5 Cubes — deep east alcove (south of W15)
+    const fivecubesMesh = createFiveCubes(0.7);
+    const fivecubesPedestal = createPedestal('Compound of 5 Cubes', fivecubesMesh, new THREE.Vector3(9, 0, -30.5));
+    scene.add(fivecubesPedestal);
+    artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
+
+    // M9: Hopf Fibration — center deep passage
+    const hopfMesh = createHopfFibration();
+    const hopfPedestal = createPedestal('Hopf Fibration', hopfMesh, new THREE.Vector3(1, 0, -30));
+    scene.add(hopfPedestal);
+    artPieces.push({ mesh: hopfPedestal, artMesh: hopfMesh, id: 'hopf', examined: false, rotatable: true, isHidden: true });
+
     // --- 6. Torus Knot (smooth → envMap, chrome) ---
     const torusKnotMesh = new THREE.Mesh(
       new THREE.TorusKnotGeometry(0.8, 0.25, 128, 32, 3, 2),
@@ -819,18 +1208,134 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Collision boxes for walls (x, z, width, depth)
     const walls = [
-      // Outer walls
-      { x: 0, z: -20, width: 40, depth: 0.5 },    // North wall
+      // Outer walls (back wall split for maze entrance gap at X=[-1, 3])
+      { x: -10.5, z: -20, width: 19, depth: 0.5 },  // Back wall left
+      { x: 11.5, z: -20, width: 17, depth: 0.5 },   // Back wall right
       { x: 0, z: 20, width: 40, depth: 0.5 },     // South wall
       { x: -20, z: 0, width: 0.5, depth: 40 },    // West wall
       { x: 20, z: 0, width: 0.5, depth: 40 },     // East wall
-      // Interior walls - will be disabled during trip
     ];
     
     const interiorWallCollisions = [
       { x: -5, z: -10, width: 15, depth: 0.5 },   // Interior wall left section
       { x: 8, z: -10, width: 15, depth: 0.5 }     // Interior wall right section
     ];
+
+    // --- Maze beyond back wall (Z < -20) ---
+    // Entry gap in back wall: X=[-1, 3]
+    // Maze extends from Z=-20 to Z=-32, X=-13 to X=13
+    const mazeWallDefs = [
+      // Entry corridor
+      { w: 0.5, d: 2, x: -1, z: -21 },              // W1: entry left wall
+      { w: 0.5, d: 2, x: 3, z: -21 },                // W2: entry right wall
+      // T-junction north wall (gap aligned with entry)
+      { w: 12, d: 0.5, x: -7, z: -22 },              // W3: T north wall west, X=[-13,-1]
+      { w: 10, d: 0.5, x: 8, z: -22 },               // W4: T north wall east, X=[3,13]
+      // Maze perimeter
+      { w: 0.5, d: 10, x: -13, z: -27 },             // W5: west boundary, Z=[-32,-22]
+      { w: 0.5, d: 10, x: 13, z: -27 },              // W6: east boundary, Z=[-32,-22]
+      { w: 26, d: 0.5, x: 0, z: -32 },               // W7: south boundary
+      // Room dividers (partial walls with gaps at south end)
+      { w: 0.5, d: 1.5, x: -7, z: -22.75 },          // W8: Room 1 divider, Z=[-23.5,-22]
+      { w: 0.5, d: 1.5, x: 7, z: -22.75 },           // W9: Room 2 divider, Z=[-23.5,-22]
+      // South wall of main corridor (gaps for passages south)
+      { w: 4, d: 0.5, x: -11, z: -25 },              // W10: far west, X=[-13,-9]
+      { w: 4, d: 0.5, x: 11, z: -25 },               // W11: far east, X=[9,13]
+      // Deep section dividers (partial, gap at south Z=-29 to -32)
+      { w: 0.5, d: 4, x: -2, z: -27 },               // W12: deep west/center, Z=[-29,-25]
+      { w: 0.5, d: 4, x: 4, z: -27 },                // W13: center/deep east, Z=[-29,-25]
+      // Deep room cross-walls (alcoves)
+      { w: 4, d: 0.5, x: -8, z: -29 },               // W14: Room 3 alcove, X=[-10,-6]
+      { w: 4, d: 0.5, x: 9, z: -29 },                // W15: Room 4 alcove, X=[7,11]
+    ];
+
+    const mazeWalls = [];
+    mazeWallDefs.forEach(def => {
+      const geom = new THREE.BoxGeometry(def.w, 6, def.d);
+      const mesh = new THREE.Mesh(geom, wallMaterial);
+      mesh.position.set(def.x, 3, def.z);
+      scene.add(mesh);
+      mazeWalls.push(mesh);
+      interiorWallCollisions.push({ x: def.x, z: def.z, width: def.w, depth: def.d });
+    });
+
+    // Maze floor and ceiling
+    const mazeFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 12),
+      floorMaterial
+    );
+    mazeFloor.rotation.x = -Math.PI / 2;
+    mazeFloor.position.set(0, 0, -26);
+    scene.add(mazeFloor);
+
+    const mazeCeiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 12),
+      ceilingMaterial
+    );
+    mazeCeiling.rotation.x = Math.PI / 2;
+    mazeCeiling.position.set(0, 6, -26);
+    scene.add(mazeCeiling);
+
+    // --- Maze Lighting ---
+    const mazeLights = [];
+
+    // Entry corridor: warm amber
+    const mazeLight1 = new THREE.PointLight(0xffcc88, 0.8, 15);
+    mazeLight1.position.set(1, 4, -21);
+    scene.add(mazeLight1);
+    mazeLights.push(mazeLight1);
+
+    // Main corridor: warm amber
+    const mazeLight2 = new THREE.PointLight(0xffcc88, 0.8, 15);
+    mazeLight2.position.set(-4, 4, -23.5);
+    scene.add(mazeLight2);
+    mazeLights.push(mazeLight2);
+
+    const mazeLight3 = new THREE.PointLight(0xffcc88, 0.8, 15);
+    mazeLight3.position.set(5, 4, -23.5);
+    scene.add(mazeLight3);
+    mazeLights.push(mazeLight3);
+
+    // Room 1 (west alcove): red/orange
+    const mazeLight4 = new THREE.PointLight(0xff6644, 0.6, 8);
+    mazeLight4.position.set(-10, 4, -23.5);
+    scene.add(mazeLight4);
+    mazeLights.push(mazeLight4);
+
+    // Room 2 (east alcove): cool blue
+    const mazeLight5 = new THREE.PointLight(0x4488ff, 0.6, 8);
+    mazeLight5.position.set(10, 4, -23.5);
+    scene.add(mazeLight5);
+    mazeLights.push(mazeLight5);
+
+    // Deep west: dim green
+    const mazeLight6 = new THREE.PointLight(0x44cc44, 0.4, 8);
+    mazeLight6.position.set(-7, 4, -27);
+    scene.add(mazeLight6);
+    mazeLights.push(mazeLight6);
+
+    // Deep east: dim purple
+    const mazeLight7 = new THREE.PointLight(0x8844cc, 0.4, 8);
+    mazeLight7.position.set(8, 4, -27);
+    scene.add(mazeLight7);
+    mazeLights.push(mazeLight7);
+
+    // Center deep: cold blue
+    const mazeLight8 = new THREE.PointLight(0x4466aa, 0.4, 8);
+    mazeLight8.position.set(1, 4, -30);
+    scene.add(mazeLight8);
+    mazeLights.push(mazeLight8);
+
+    // Deep south: dim amber
+    const mazeLight9 = new THREE.PointLight(0xffaa66, 0.3, 6);
+    mazeLight9.position.set(-8, 4, -30.5);
+    scene.add(mazeLight9);
+    mazeLights.push(mazeLight9);
+
+    const mazeLight10 = new THREE.PointLight(0xffaa66, 0.3, 6);
+    mazeLight10.position.set(9, 4, -30.5);
+    scene.add(mazeLight10);
+    mazeLights.push(mazeLight10);
 
     // Collision detection helper
     const checkCollision = (newX, newZ, radius = 0.5) => {
@@ -1529,7 +2034,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Constrain player within horizontal bounds
       camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
-      camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
+      camera.position.z = Math.max(-31.5, Math.min(19, camera.position.z));
 
       // Track path
       if (gameStateRef.current.pathTaken.length === 0 || 
@@ -1564,6 +2069,10 @@ const WanderingMuseum = ({ onComplete }) => {
         // Hide interior walls completely (they block the circles)
         interiorWall1.visible = false;
         interiorWall2.visible = false;
+        mazeWalls.forEach(w => w.visible = false);
+        mazeLights.forEach(l => l.visible = false);
+        mazeFloor.visible = false;
+        mazeCeiling.visible = false;
 
         // Hide floor
         floor.visible = false;
@@ -1671,6 +2180,10 @@ const WanderingMuseum = ({ onComplete }) => {
         // Show interior walls
         interiorWall1.visible = true;
         interiorWall2.visible = true;
+        mazeWalls.forEach(w => w.visible = true);
+        mazeLights.forEach(l => l.visible = true);
+        mazeFloor.visible = true;
+        mazeCeiling.visible = true;
 
         // Show floor
         floor.visible = true;
@@ -1854,7 +2367,7 @@ const WanderingMuseum = ({ onComplete }) => {
                 : 'museum visited'}
             </h2>
             <div style={{ opacity: 0.7, lineHeight: '2', fontSize: '15px', marginBottom: '30px' }}>
-              <div>Art pieces examined: {completionResults.uniqueDescriptions} / 6</div>
+              <div>Art pieces examined: {completionResults.uniqueDescriptions} / 15</div>
               <div>Completion: {completionResults.completionMethod === 'trip' ? 'psychedelic portal'
                 : completionResults.completionMethod === 'sober' ? 'full gallery tour'
                 : 'early departure'}</div>
@@ -1896,8 +2409,8 @@ const WanderingMuseum = ({ onComplete }) => {
             opacity: 0.6
           }}>
             <div>
-              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / 6
-              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= 6 && !isTripping && (
+              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / 15
+              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= 15 && !isTripping && (
                 <span style={{ color: '#00ff00', marginLeft: '10px' }}>✓ Complete!</span>
               )}
             </div>
