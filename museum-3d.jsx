@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 
 const WanderingMuseum = ({ onComplete }) => {
   const containerRef = useRef(null);
@@ -53,38 +54,35 @@ const WanderingMuseum = ({ onComplete }) => {
 
   function createMobiusStrip(radius = 1, width = 0.4, segments = 100) {
     const geometry = new THREE.BufferGeometry();
-    const widthSteps = 2;
+    const widthSteps = 6;
     const vertices = [];
     const indices = [];
-    const normals = [];
     const uvs = [];
+
+    // Subtle ripple along the length of the strip
+    const rippleWaves = 5;    // undulations around the loop
+    const rippleAmp = 0.04;   // small displacement
 
     for (let i = 0; i <= segments; i++) {
       const theta = (i / segments) * Math.PI * 2;
       for (let j = 0; j <= widthSteps; j++) {
         const t = (j / widthSteps - 0.5) * width;
-        const x = (radius + t * Math.cos(theta / 2)) * Math.cos(theta);
-        const y = (radius + t * Math.cos(theta / 2)) * Math.sin(theta);
-        const z = t * Math.sin(theta / 2);
+        // Standard Möbius
+        const r = radius + t * Math.cos(theta / 2);
+        let x = r * Math.cos(theta);
+        let y = r * Math.sin(theta);
+        let z = t * Math.sin(theta / 2);
+
+        // Ripple along theta, displaced in the surface normal direction
+        const ripple = rippleAmp * Math.sin(theta * rippleWaves);
+        const nx = -Math.sin(theta / 2) * Math.cos(theta);
+        const ny = -Math.sin(theta / 2) * Math.sin(theta);
+        const nz = Math.cos(theta / 2);
+        x += ripple * nx;
+        y += ripple * ny;
+        z += ripple * nz;
+
         vertices.push(x, z, y); // swap y/z so strip is horizontal
-
-        // Approximate normal via cross product of partial derivatives
-        const dTheta = 0.001;
-        const x2 = (radius + t * Math.cos((theta + dTheta) / 2)) * Math.cos(theta + dTheta);
-        const y2 = (radius + t * Math.cos((theta + dTheta) / 2)) * Math.sin(theta + dTheta);
-        const z2 = t * Math.sin((theta + dTheta) / 2);
-        const dt = 0.001;
-        const x3 = (radius + (t + dt) * Math.cos(theta / 2)) * Math.cos(theta);
-        const y3 = (radius + (t + dt) * Math.cos(theta / 2)) * Math.sin(theta);
-        const z3 = (t + dt) * Math.sin(theta / 2);
-        const tx1 = x2 - x, ty1 = z2 - z, tz1 = y2 - y;
-        const tx2 = x3 - x, ty2 = z3 - z, tz2 = y3 - y;
-        let nx = ty1 * tz2 - tz1 * ty2;
-        let ny = tz1 * tx2 - tx1 * tz2;
-        let nz = tx1 * ty2 - ty1 * tx2;
-        const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-        normals.push(nx / len, ny / len, nz / len);
-
         uvs.push(i / segments, j / widthSteps);
       }
     }
@@ -102,31 +100,53 @@ const WanderingMuseum = ({ onComplete }) => {
 
     geometry.setIndex(indices);
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.computeVertexNormals();
     return geometry;
   }
 
   function createKleinBottle(scale = 1, uSegments = 60, vSegments = 30) {
+    // Classic bottle-shaped Klein bottle — smooth single-formula parametrization
+    // Reference: Wikipedia "Klein bottle" / Wolfram MathWorld
+    // u in [0, π], v in [0, 2π]
     const geometry = new THREE.BufferGeometry();
     const vertices = [];
     const indices = [];
     const uvs = [];
-    const a = 2.0;
 
     for (let i = 0; i <= uSegments; i++) {
-      const u = (i / uSegments) * Math.PI * 2;
+      const u = (i / uSegments) * Math.PI;
+      const cosU = Math.cos(u), sinU = Math.sin(u);
+      const cos2U = cosU * cosU, cos4U = cos2U * cos2U, cos6U = cos4U * cos2U;
+      const cos3U = cos2U * cosU, cos5U = cos4U * cosU, cos7U = cos6U * cosU;
+
       for (let j = 0; j <= vSegments; j++) {
         const v = (j / vSegments) * Math.PI * 2;
-        const cosU = Math.cos(u), sinU = Math.sin(u);
-        const cosUh = Math.cos(u / 2), sinUh = Math.sin(u / 2);
-        const sinV = Math.sin(v), sin2V = Math.sin(2 * v);
+        const cosV = Math.cos(v), sinV = Math.sin(v);
 
-        const x = (a + cosUh * sinV - sinUh * sin2V) * cosU * scale;
-        const y = (a + cosUh * sinV - sinUh * sin2V) * sinU * scale;
-        const z = (sinUh * sinV + cosUh * sin2V) * scale;
-        vertices.push(x, z, y); // swap y/z for upright orientation
+        const x = (-2 / 15) * cosU * (
+          3 * cosV
+          - 30 * sinU
+          + 90 * cos4U * sinU
+          - 60 * cos6U * sinU
+          + 5 * cosU * cosV * sinU
+        );
 
+        const y = (-1 / 15) * sinU * (
+          3 * cosV
+          - 3 * cos2U * cosV
+          - 48 * cos4U * cosV
+          + 48 * cos6U * cosV
+          - 60 * sinU
+          + 5 * cosU * cosV * sinU
+          - 5 * cos3U * cosV * sinU
+          - 80 * cos5U * cosV * sinU
+          + 80 * cos7U * cosV * sinU
+        );
+
+        const z = (2 / 15) * (3 + 5 * cosU * sinU) * sinV;
+
+        vertices.push(x * scale, y * scale, z * scale);
         uvs.push(i / uSegments, j / vSegments);
       }
     }
@@ -150,61 +170,18 @@ const WanderingMuseum = ({ onComplete }) => {
   }
 
   function createTeapot(scale = 1, material = null) {
-    const group = new THREE.Group();
-
-    // Lathe body - teapot silhouette profile
-    const profile = [
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0.6, 0),
-      new THREE.Vector2(0.9, 0.1),
-      new THREE.Vector2(1.1, 0.3),
-      new THREE.Vector2(1.2, 0.5),
-      new THREE.Vector2(1.25, 0.8),
-      new THREE.Vector2(1.2, 1.1),
-      new THREE.Vector2(1.1, 1.3),
-      new THREE.Vector2(1.0, 1.5),
-      new THREE.Vector2(0.9, 1.6),
-      new THREE.Vector2(0.85, 1.65),
-      new THREE.Vector2(0.8, 1.7),
-      // Lid rim
-      new THREE.Vector2(0.85, 1.72),
-      new THREE.Vector2(0.8, 1.75),
-      new THREE.Vector2(0.6, 1.8),
-      new THREE.Vector2(0.4, 1.85),
-      new THREE.Vector2(0.2, 1.88),
-      // Lid knob
-      new THREE.Vector2(0.15, 1.9),
-      new THREE.Vector2(0.12, 1.95),
-      new THREE.Vector2(0.08, 2.0),
-      new THREE.Vector2(0, 2.02),
-    ];
-    profile.forEach(p => { p.x *= scale; p.y *= scale; });
-
-    const bodyMaterial = material || new THREE.MeshStandardMaterial({
+    const mat = material || new THREE.MeshStandardMaterial({
       color: 0xeeeeff,
       roughness: 0.2,
       metalness: 0.6
     });
 
-    const bodyGeometry = new THREE.LatheGeometry(profile, 32);
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    group.add(body);
-
-    // Handle (torus on the side)
-    const handleGeometry = new THREE.TorusGeometry(0.4 * scale, 0.08 * scale, 12, 24, Math.PI);
-    const handle = new THREE.Mesh(handleGeometry, bodyMaterial);
-    handle.position.set(-1.15 * scale, 1.0 * scale, 0);
-    handle.rotation.z = Math.PI / 2;
-    group.add(handle);
-
-    // Spout (tapered cylinder)
-    const spoutGeometry = new THREE.CylinderGeometry(0.06 * scale, 0.12 * scale, 0.8 * scale, 12);
-    const spout = new THREE.Mesh(spoutGeometry, bodyMaterial);
-    spout.position.set(1.1 * scale, 1.1 * scale, 0);
-    spout.rotation.z = -Math.PI / 4;
-    group.add(spout);
-
-    return group;
+    // Real Utah Teapot from Martin Newell's Bezier patch data
+    // size, segments, bottom, lid, body, fitLid, blinn
+    const geom = new TeapotGeometry(scale, 15, true, true, true, true, true);
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.material.side = THREE.DoubleSide;
+    return mesh;
   }
 
   // --- Maze Geometry Builders ---
@@ -218,28 +195,64 @@ const WanderingMuseum = ({ onComplete }) => {
       flatShading: true
     });
 
-    // Collect positions and sizes, then merge into single geometry
-    const positions = [];
-    function collectTetra(cx, cy, cz, s, lvl) {
+    // Regular tetrahedron vertices with base parallel to floor (XZ plane)
+    // Circumscribed on unit sphere, centered at origin
+    const v0 = [0, 1, 0];                                         // apex
+    const v1 = [0, -1/3, 2*Math.sqrt(2)/3];                       // base front
+    const v2 = [-Math.sqrt(6)/3, -1/3, -Math.sqrt(2)/3];          // base back-left
+    const v3 = [Math.sqrt(6)/3, -1/3, -Math.sqrt(2)/3];           // base back-right
+    const verts = [v0, v1, v2, v3];
+
+    // Collect leaf tetrahedra positions and sizes
+    const leaves = [];
+    function subdivide(cx, cy, cz, s, lvl) {
       if (lvl === 0) {
-        positions.push({ x: cx, y: cy, z: cz, s });
+        leaves.push({ x: cx, y: cy, z: cz, s });
         return;
       }
       const hs = s / 2;
-      const h = s * Math.sqrt(2 / 3);
-      const hh = h / 2;
-      const off = hs * 0.5;
-      collectTetra(cx, cy + hh * 0.5, cz, hs, lvl - 1);
-      collectTetra(cx - off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
-      collectTetra(cx + off, cy - hh * 0.5, cz - off * 0.577, hs, lvl - 1);
-      collectTetra(cx, cy - hh * 0.5, cz + off * 1.155, hs, lvl - 1);
+      // Place 4 sub-tetrahedra at the 4 vertex directions, each offset by s/2
+      for (const v of verts) {
+        subdivide(
+          cx + v[0] * hs,
+          cy + v[1] * hs,
+          cz + v[2] * hs,
+          hs, lvl - 1
+        );
+      }
     }
-    collectTetra(0, 0, 0, size, level);
+    subdivide(0, 0, 0, size, level);
 
-    // Merge all tetrahedra into one geometry
-    const geoms = positions.map(p => {
-      const g = new THREE.TetrahedronGeometry(p.s);
-      g.translate(p.x, p.y, p.z);
+    // Build each leaf as a custom tetrahedron with matching orientation
+    const geoms = leaves.map(p => {
+      const g = new THREE.BufferGeometry();
+      const s = p.s;
+      // Vertices of this tetrahedron
+      const tv = verts.map(v => [p.x + v[0] * s, p.y + v[1] * s, p.z + v[2] * s]);
+      // 4 triangular faces (CCW winding from outside)
+      const faces = [
+        [tv[0], tv[1], tv[2]],
+        [tv[0], tv[2], tv[3]],
+        [tv[0], tv[3], tv[1]],
+        [tv[1], tv[3], tv[2]],
+      ];
+      const pos = [];
+      const normals = [];
+      for (const [a, b, c] of faces) {
+        const ab = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+        const ac = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+        const n = [
+          ab[1]*ac[2] - ab[2]*ac[1],
+          ab[2]*ac[0] - ab[0]*ac[2],
+          ab[0]*ac[1] - ab[1]*ac[0],
+        ];
+        const len = Math.sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+        n[0] /= len; n[1] /= len; n[2] /= len;
+        pos.push(...a, ...b, ...c);
+        normals.push(...n, ...n, ...n);
+      }
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
       return g;
     });
     const merged = mergeGeometries(geoms);
@@ -327,7 +340,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     const geom2 = new THREE.TetrahedronGeometry(size);
     const mesh2 = new THREE.Mesh(geom2, mat2);
-    mesh2.rotation.x = Math.PI;
+    mesh2.scale.set(-1, -1, -1); // Invert through origin to get dual tetrahedron
     group.add(mesh2);
     mesh2.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(geom2),
@@ -385,18 +398,20 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
-  function createTrefoilKnot(tubularSegments = 128, radialSegments = 16) {
-    class TrefoilCurve extends THREE.Curve {
+  function createCinquefoilKnot(tubularSegments = 128, radialSegments = 16) {
+    class CinquefoilCurve extends THREE.Curve {
       getPoint(t) {
         const s = t * Math.PI * 2;
-        const x = Math.sin(s) + 2 * Math.sin(2 * s);
-        const y = Math.cos(s) - 2 * Math.cos(2 * s);
-        const z = -Math.sin(3 * s);
-        return new THREE.Vector3(x, y, z).multiplyScalar(0.35);
+        // (2,5) torus knot — cinquefoil
+        const r = 2 + Math.cos(5 * s);
+        const x = r * Math.cos(2 * s);
+        const y = r * Math.sin(2 * s);
+        const z = -Math.sin(5 * s);
+        return new THREE.Vector3(x, y, z).multiplyScalar(0.3);
       }
     }
 
-    const path = new TrefoilCurve();
+    const path = new CinquefoilCurve();
     const geometry = new THREE.TubeGeometry(path, tubularSegments, 0.08, radialSegments, true);
     const material = new THREE.MeshStandardMaterial({
       color: 0x22ccaa,
@@ -447,68 +462,7 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
-  function createApollonianGasket(maxDepth = 3, minR = 0.04) {
-    const group = new THREE.Group();
-    // 3D Apollonian gasket: recursively pack tangent spheres
-    // Limited depth + deduplication to keep sphere count manageable
-    const spheres = []; // { x, y, z, r }
-    const placed = new Set();
 
-    function key(x, y, z, r) {
-      return `${Math.round(x*100)},${Math.round(y*100)},${Math.round(z*100)},${Math.round(r*100)}`;
-    }
-
-    function addSphere(x, y, z, r, depth) {
-      if (r < minR || depth > maxDepth) return;
-      const k = key(x, y, z, r);
-      if (placed.has(k)) return;
-      placed.add(k);
-      spheres.push({ x, y, z, r, depth });
-
-      const nr = r * 0.42;
-      const d = r + nr;
-      // 6 cardinal directions only
-      const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-      for (const [dx, dy, dz] of dirs) {
-        addSphere(x + dx*d, y + dy*d, z + dz*d, nr, depth + 1);
-      }
-    }
-
-    addSphere(0, 0, 0, 0.45, 0);
-
-    // Merge by depth for color variation — one draw call per level
-    const byDepth = {};
-    spheres.forEach(s => {
-      if (!byDepth[s.depth]) byDepth[s.depth] = [];
-      byDepth[s.depth].push(s);
-    });
-
-    // Use low-poly spheres, fewer segments for smaller spheres
-    Object.keys(byDepth).forEach(d => {
-      const depth = parseInt(d);
-      const hue = depth * 0.2;
-      const color = new THREE.Color().setHSL(hue, 0.7, 0.55);
-      const material = new THREE.MeshStandardMaterial({
-        color: color,
-        roughness: 0.25,
-        metalness: 0.6,
-        transparent: true,
-        opacity: 0.85
-      });
-
-      const segs = Math.max(6, 12 - depth * 2);
-      const geoms = byDepth[d].map(s => {
-        const g = new THREE.SphereGeometry(s.r, segs, segs);
-        g.translate(s.x, s.y, s.z);
-        return g;
-      });
-      const merged = mergeGeometries(geoms);
-      geoms.forEach(g => g.dispose());
-      group.add(new THREE.Mesh(merged, material));
-    });
-
-    return group;
-  }
 
   function createGyroid(scale = 0.8, resolution = 30) {
     // Marching cubes isosurface extraction of the gyroid:
@@ -709,7 +663,7 @@ const WanderingMuseum = ({ onComplete }) => {
     const qualitySettings = {
       high: {
         sierpinskiLevel: 4, mengerLevel: 3,
-        apollonianMaxDepth: 3, apollonianMinR: 0.04,
+        romanescoMaxDepth: 3,
         gyroidResolution: 30, saddleResolution: 20,
         torusKnotTubular: 128, torusKnotRadial: 32,
         trefoilTubular: 128, trefoilRadial: 16,
@@ -719,7 +673,7 @@ const WanderingMuseum = ({ onComplete }) => {
       },
       medium: {
         sierpinskiLevel: 3, mengerLevel: 2,
-        apollonianMaxDepth: 2, apollonianMinR: 0.06,
+        romanescoMaxDepth: 2,
         gyroidResolution: 20, saddleResolution: 14,
         torusKnotTubular: 64, torusKnotRadial: 16,
         trefoilTubular: 64, trefoilRadial: 8,
@@ -729,7 +683,7 @@ const WanderingMuseum = ({ onComplete }) => {
       },
       low: {
         sierpinskiLevel: 2, mengerLevel: 1,
-        apollonianMaxDepth: 1, apollonianMinR: 0.1,
+        romanescoMaxDepth: 1,
         gyroidResolution: 12, saddleResolution: 8,
         torusKnotTubular: 32, torusKnotRadial: 8,
         trefoilTubular: 32, trefoilRadial: 8,
@@ -1085,8 +1039,10 @@ const WanderingMuseum = ({ onComplete }) => {
       labelPlane.position.set(0, 0.6, 0.92);
       group.add(labelPlane);
 
-      // Art mesh on top
-      artMesh.position.y = 1.2 + 1.3; // top of pedestal + offset for art center (clearance for oscillation)
+      // Art mesh on top — compute bounding box so it sits just above pedestal
+      const box = new THREE.Box3().setFromObject(artMesh);
+      const bottomExtent = -box.min.y; // how far below the mesh origin the bottom extends
+      artMesh.position.y = 1.2 + bottomExtent + 0.15; // pedestal top + bottom clearance + small gap
       group.add(artMesh);
 
       // Add subtle wireframe overlay to all geometry in the art mesh (skip if low quality)
@@ -1130,7 +1086,7 @@ const WanderingMuseum = ({ onComplete }) => {
       envMap: envTexture,
       envMapIntensity: 1.0
     });
-    const teapotMesh = createTeapot(0.7, teapotMaterial);
+    const teapotMesh = createTeapot(1.0, teapotMaterial);
     const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-8, 0, -5));
     scene.add(teapotPedestal);
     artPieces.push({ mesh: teapotPedestal, artMesh: teapotMesh, id: 'teapot', examined: false, rotatable: true });
@@ -1259,12 +1215,12 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: stellaPedestal, artMesh: stellaMesh, id: 'stella', examined: false, rotatable: true, isHidden: true });
 
     // M6: Trefoil Knot — deep west alcove south
-    const trefoilMesh = createTrefoilKnot(q.trefoilTubular, q.trefoilRadial);
-    trefoilMesh.material.envMap = envTexture;
-    trefoilMesh.material.envMapIntensity = 1.0;
-    const trefoilPedestal = createPedestal('Trefoil Knot', trefoilMesh, new THREE.Vector3(-12, 0, -42));
-    scene.add(trefoilPedestal);
-    artPieces.push({ mesh: trefoilPedestal, artMesh: trefoilMesh, id: 'trefoil', examined: false, rotatable: true, isHidden: true });
+    const cinquefoilMesh = createCinquefoilKnot(q.trefoilTubular, q.trefoilRadial);
+    cinquefoilMesh.material.envMap = envTexture;
+    cinquefoilMesh.material.envMapIntensity = 1.0;
+    const cinquefoilPedestal = createPedestal('Cinquefoil Knot', cinquefoilMesh, new THREE.Vector3(-12, 0, -42));
+    scene.add(cinquefoilPedestal);
+    artPieces.push({ mesh: cinquefoilPedestal, artMesh: cinquefoilMesh, id: 'cinquefoil', examined: false, rotatable: true, isHidden: true });
 
     // M7: Menger Sponge — deep east room
     const mengerMesh = createMengerSponge(q.mengerLevel, 1.2);
@@ -1278,11 +1234,28 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(fivecubesPedestal);
     artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
 
-    // M9: Apollonian Gasket — center deep passage
-    const apollonianMesh = createApollonianGasket(q.apollonianMaxDepth, q.apollonianMinR);
-    const apollonianPedestal = createPedestal('Apollonian Gasket', apollonianMesh, new THREE.Vector3(1, 0, -42));
-    scene.add(apollonianPedestal);
-    artPieces.push({ mesh: apollonianPedestal, artMesh: apollonianMesh, id: 'apollonian', examined: false, rotatable: true, isHidden: true });
+    // M9: Octahedron — center deep passage
+    const octaGeom = new THREE.OctahedronGeometry(1.0);
+    const octaMesh = new THREE.Mesh(
+      octaGeom,
+      new THREE.MeshStandardMaterial({
+        color: 0xff8844,
+        roughness: 0.25,
+        metalness: 0.6,
+        emissive: 0x442200,
+        emissiveIntensity: 0.3,
+        envMap: envTexture,
+        envMapIntensity: 0.5
+      })
+    );
+    const octaEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(octaGeom),
+      new THREE.LineBasicMaterial({ color: 0xffcc88 })
+    );
+    octaMesh.add(octaEdges);
+    const octaPedestal = createPedestal('Octahedron', octaMesh, new THREE.Vector3(1, 0, -42));
+    scene.add(octaPedestal);
+    artPieces.push({ mesh: octaPedestal, artMesh: octaMesh, id: 'octahedron', examined: false, rotatable: true, isHidden: true });
 
     // --- 6. Torus Knot (smooth → envMap, chrome) ---
     const torusKnotMesh = new THREE.Mesh(
@@ -1295,9 +1268,9 @@ const WanderingMuseum = ({ onComplete }) => {
         envMapIntensity: 1.2
       })
     );
-    const torusKnotPedestal = createPedestal('Torus Knot', torusKnotMesh, new THREE.Vector3(0, 0, 8));
+    const torusKnotPedestal = createPedestal('Trefoil Knot', torusKnotMesh, new THREE.Vector3(0, 0, 8));
     scene.add(torusKnotPedestal);
-    artPieces.push({ mesh: torusKnotPedestal, artMesh: torusKnotMesh, id: 'torusknot', examined: false, rotatable: true });
+    artPieces.push({ mesh: torusKnotPedestal, artMesh: torusKnotMesh, id: 'trefoil', examined: false, rotatable: true });
 
     // THE BUTTON - Trip Balls Table
     const tableGroup = new THREE.Group();
@@ -2398,7 +2371,7 @@ const WanderingMuseum = ({ onComplete }) => {
           }
         } else {
           // Ramp oscillation amplitude up smoothly
-          hoveredPiece._oscAmplitude = Math.min(0.3, hoveredPiece._oscAmplitude + deltaTime * 0.3);
+          hoveredPiece._oscAmplitude = Math.min(0.1, hoveredPiece._oscAmplitude + deltaTime * 0.2);
         }
       } else {
         if (hoveredPiece && !hoveredPiece.isButton) {
