@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 const WanderingMuseum = ({ onComplete }) => {
   const containerRef = useRef(null);
@@ -657,22 +660,26 @@ const WanderingMuseum = ({ onComplete }) => {
       vertexMeshes.push(sphere);
     }
 
-    // Create edges as line segments using a buffer geometry
+    // Create edges using Line2 fat lines for visible thickness
     const edgePositions = new Float32Array(edges.length * 6); // 2 verts × 3 coords per edge
-    const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3));
-    const edgeMaterial = new THREE.LineBasicMaterial({
+    const edgeGeometry = new LineSegmentsGeometry();
+    edgeGeometry.setPositions(edgePositions);
+    const edgeMaterial = new LineMaterial({
       color: 0x88ccff,
+      linewidth: 3, // pixels
       transparent: true,
       opacity: 0.8,
     });
-    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    const edgeLines = new LineSegments2(edgeGeometry, edgeMaterial);
     group.add(edgeLines);
 
     // Update function called each frame
-    group.userData.updateTesseract = (time) => {
+    group.userData.updateTesseract = (time, resolution) => {
       const angle1 = time * 0.3; // xw rotation
       const angle2 = time * 0.2; // yw rotation
+
+      // LineMaterial needs resolution to compute screen-space width
+      if (resolution) edgeMaterial.resolution.copy(resolution);
 
       const projected = verts4D.map(v => project(v, angle1, angle2));
 
@@ -687,14 +694,14 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Update edge positions
-      const pos = edgeGeometry.attributes.position.array;
+      const pos = new Float32Array(edges.length * 6);
       for (let e = 0; e < edges.length; e++) {
         const [i, j] = edges[e];
         const pi = projected[i], pj = projected[j];
         pos[e * 6 + 0] = pi.x; pos[e * 6 + 1] = pi.y; pos[e * 6 + 2] = pi.z;
         pos[e * 6 + 3] = pj.x; pos[e * 6 + 4] = pj.y; pos[e * 6 + 5] = pj.z;
       }
-      edgeGeometry.attributes.position.needsUpdate = true;
+      edgeGeometry.setPositions(pos);
     };
 
     // Initial projection
@@ -1086,13 +1093,15 @@ const WanderingMuseum = ({ onComplete }) => {
       group.add(labelPlane);
 
       // Art mesh on top — compute bounding box so it sits just above pedestal
+      // Use manual override if provided (for animated shapes whose bounds change over time)
       const box = new THREE.Box3().setFromObject(artMesh);
-      const bottomExtent = -box.min.y; // how far below the mesh origin the bottom extends
+      const bottomExtent = artMesh.userData.bottomExtent !== undefined
+        ? artMesh.userData.bottomExtent : -box.min.y;
       artMesh.position.y = 1.2 + bottomExtent + 0.15; // pedestal top + bottom clearance + small gap
       group.add(artMesh);
 
-      // Add subtle wireframe overlay to all geometry in the art mesh (skip if low quality)
-      if (q.wireframes) {
+      // Add subtle wireframe overlay to all geometry in the art mesh (skip if low quality or opted out)
+      if (q.wireframes && !artMesh.userData.skipWireframe) {
         const wireframeMat = new THREE.LineBasicMaterial({
           color: 0xffffff,
           transparent: true,
@@ -1251,6 +1260,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // M4: Tesseract — main corridor east
     const tesseractMesh = createTesseract(0.55);
+    tesseractMesh.userData.skipWireframe = true;
+    tesseractMesh.userData.bottomExtent = 1.20; // numerically computed worst-case during 4D rotation
     const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(7, 0, -27.5));
     scene.add(tesseractPedestal);
     artPieces.push({ mesh: tesseractPedestal, artMesh: tesseractMesh, id: 'tesseract', examined: false, rotatable: true, isHidden: true });
@@ -2230,8 +2241,8 @@ const WanderingMuseum = ({ onComplete }) => {
             forward.normalize();
             const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
             
-            const moveX = (-leftStickY * forward.x + leftStickX * right.x) * moveSpeed * 1.5;
-            const moveZ = (-leftStickY * forward.z + leftStickX * right.z) * moveSpeed * 1.5;
+            const moveX = (-leftStickY * forward.x + leftStickX * right.x) * moveSpeed;
+            const moveZ = (-leftStickY * forward.z + leftStickX * right.z) * moveSpeed;
             
             const newX = camera.position.x + moveX;
             const newZ = camera.position.z + moveZ;
@@ -2475,7 +2486,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Animate tesseract 4D rotation
       if (tesseractMesh.userData.updateTesseract) {
-        tesseractMesh.userData.updateTesseract(currentTime / 1000);
+        tesseractMesh.userData.updateTesseract(currentTime / 1000, new THREE.Vector2(window.innerWidth, window.innerHeight));
       }
 
       // Animate button pulse
