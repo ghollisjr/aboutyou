@@ -1102,7 +1102,7 @@ const WanderingMuseum = ({ onComplete }) => {
     // --- Maze Art Pieces (beyond back wall, Z < -20) ---
 
     // M1: Sierpinski Tetrahedron — Room 1 west alcove
-    const sierpinskiMesh = createSierpinskiTetrahedron(3, 0.9);
+    const sierpinskiMesh = createSierpinskiTetrahedron(4, 0.9);
     const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-15, 0, -27.5));
     scene.add(sierpinskiPedestal);
     artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
