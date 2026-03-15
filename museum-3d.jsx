@@ -874,7 +874,7 @@ const WanderingMuseum = ({ onComplete }) => {
       group.add(labelPlane);
 
       // Art mesh on top
-      artMesh.position.y = 1.2 + 1.0; // top of pedestal + offset for art center
+      artMesh.position.y = 1.2 + 1.3; // top of pedestal + offset for art center (clearance for oscillation)
       group.add(artMesh);
 
       // Invisible interaction volume covering pedestal + art area
@@ -2073,22 +2073,14 @@ const WanderingMuseum = ({ onComplete }) => {
       const hoverTarget = findTargetPiece();
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
         if (hoveredPiece !== hoverTarget) {
-          // Restore previous hovered piece
-          if (hoveredPiece) {
-            if (hoveredPiece.isButton) {
-              // Restore button brightness
-              if (hoveredPiece.buttonMesh) {
-                hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
-              }
-            } else if (hoveredPiece.artMesh) {
-              hoveredPiece.artMesh.position.y = hoveredPiece._baseArtY;
-            }
-          }
           hoveredPiece = hoverTarget;
           if (!hoverTarget.isButton) {
             const target = hoveredPiece.artMesh || hoveredPiece.mesh;
             if (hoveredPiece._baseArtY === undefined) {
               hoveredPiece._baseArtY = target.position.y;
+            }
+            if (hoveredPiece._oscAmplitude === undefined) {
+              hoveredPiece._oscAmplitude = 0;
             }
           }
           const action = hoverTarget.isButton ? 'to trip balls' : 'to examine';
@@ -2103,29 +2095,42 @@ const WanderingMuseum = ({ onComplete }) => {
             hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 2.5;
           }
         } else {
-          // Oscillate the art mesh only (0.5 Hz)
-          const target = hoveredPiece.artMesh || hoveredPiece.mesh;
-          if (target) {
-            const baseY = hoveredPiece._baseArtY;
-            target.position.y = baseY + 0.3 + Math.sin(currentTime / 1000 * Math.PI) * 0.3;
-          }
+          // Ramp oscillation amplitude up smoothly
+          hoveredPiece._oscAmplitude = Math.min(0.3, hoveredPiece._oscAmplitude + deltaTime * 0.3);
         }
       } else {
-        if (hoveredPiece) {
-          if (hoveredPiece.isButton) {
-            if (hoveredPiece.buttonMesh) {
-              hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
-            }
-          } else {
-            const target = hoveredPiece.artMesh || hoveredPiece.mesh;
-            if (target) {
-              target.position.y = hoveredPiece._baseArtY;
-            }
+        if (hoveredPiece && !hoveredPiece.isButton) {
+          // Mark for ramp-down (handled below)
+        }
+        if (hoveredPiece && hoveredPiece.isButton) {
+          if (hoveredPiece.buttonMesh) {
+            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
           }
+        }
+        if (hoveredPiece) {
           hoveredPiece = null;
           setInteractPrompt(null);
         }
       }
+
+      // Update all art piece oscillations (smooth ramp up/down)
+      artPieces.forEach(piece => {
+        if (piece.isButton || piece.isTripExit || !piece.artMesh) return;
+        if (piece._baseArtY === undefined) return;
+
+        // Ramp down amplitude for non-hovered pieces
+        if (piece !== hoveredPiece && piece._oscAmplitude > 0) {
+          piece._oscAmplitude = Math.max(0, piece._oscAmplitude - deltaTime * 0.3);
+        }
+
+        if (piece._oscAmplitude > 0.001) {
+          const amp = piece._oscAmplitude;
+          piece.artMesh.position.y = piece._baseArtY + amp + Math.sin(currentTime / 1000 * Math.PI) * amp;
+        } else if (piece._oscAmplitude !== undefined && piece._oscAmplitude <= 0.001) {
+          piece.artMesh.position.y = piece._baseArtY;
+          piece._oscAmplitude = 0;
+        }
+      });
 
       // Fade vignette down when not hovering button
       if (!hoveredPiece || !hoveredPiece.isButton) {
