@@ -1142,7 +1142,7 @@ const WanderingMuseum = ({ onComplete }) => {
     artPieces.push({ mesh: trefoilPedestal, artMesh: trefoilMesh, id: 'trefoil', examined: false, rotatable: true, isHidden: true });
 
     // M7: Menger Sponge — deep east room
-    const mengerMesh = createMengerSponge(2, 1.2);
+    const mengerMesh = createMengerSponge(3, 1.2);
     const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(13, 0, -35));
     scene.add(mengerPedestal);
     artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
