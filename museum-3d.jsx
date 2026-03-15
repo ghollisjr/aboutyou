@@ -1224,7 +1224,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // M7: Menger Sponge — deep east room
     const mengerMesh = createMengerSponge(q.mengerLevel, 1.2);
-    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(13, 0, -35));
+    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(1, 0, -42));
     scene.add(mengerPedestal);
     artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
 
@@ -1253,7 +1253,7 @@ const WanderingMuseum = ({ onComplete }) => {
       new THREE.LineBasicMaterial({ color: 0xffcc88 })
     );
     octaMesh.add(octaEdges);
-    const octaPedestal = createPedestal('Octahedron', octaMesh, new THREE.Vector3(1, 0, -42));
+    const octaPedestal = createPedestal('Octahedron', octaMesh, new THREE.Vector3(13, 0, -35));
     scene.add(octaPedestal);
     artPieces.push({ mesh: octaPedestal, artMesh: octaMesh, id: 'octahedron', examined: false, rotatable: true, isHidden: true });
 
