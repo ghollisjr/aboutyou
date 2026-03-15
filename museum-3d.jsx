@@ -106,47 +106,31 @@ const WanderingMuseum = ({ onComplete }) => {
   }
 
   function createKleinBottle(scale = 1, uSegments = 60, vSegments = 30) {
-    // Classic bottle-shaped Klein bottle — smooth single-formula parametrization
-    // Reference: Wikipedia "Klein bottle" / Wolfram MathWorld
-    // u in [0, π], v in [0, 2π]
+    // Figure-8 Klein bottle immersion — shows the self-intersection clearly
+    // u in [0, 2π], v in [0, 2π]
     const geometry = new THREE.BufferGeometry();
     const vertices = [];
     const indices = [];
     const uvs = [];
 
+    const aa = 2; // radius scaling (smaller = more visible figure-8 proportions)
+
     for (let i = 0; i <= uSegments; i++) {
-      const u = (i / uSegments) * Math.PI;
-      const cosU = Math.cos(u), sinU = Math.sin(u);
-      const cos2U = cosU * cosU, cos4U = cos2U * cos2U, cos6U = cos4U * cos2U;
-      const cos3U = cos2U * cosU, cos5U = cos4U * cosU, cos7U = cos6U * cosU;
+      const u = (i / uSegments) * Math.PI * 2;
 
       for (let j = 0; j <= vSegments; j++) {
         const v = (j / vSegments) * Math.PI * 2;
+
+        const cosV2 = Math.cos(v / 2), sinV2 = Math.sin(v / 2);
+        const sinU = Math.sin(u), sin2U = Math.sin(2 * u);
         const cosV = Math.cos(v), sinV = Math.sin(v);
 
-        const x = (-2 / 15) * cosU * (
-          3 * cosV
-          - 30 * sinU
-          + 90 * cos4U * sinU
-          - 60 * cos6U * sinU
-          + 5 * cosU * cosV * sinU
-        );
+        const r = aa + cosV2 * sinU - sinV2 * sin2U;
+        const x = r * cosV;
+        const y = r * sinV;
+        const z = (sinV2 * sinU + cosV2 * sin2U) * 2.0; // stretch height to show figure-8
 
-        const y = (-1 / 15) * sinU * (
-          3 * cosV
-          - 3 * cos2U * cosV
-          - 48 * cos4U * cosV
-          + 48 * cos6U * cosV
-          - 60 * sinU
-          + 5 * cosU * cosV * sinU
-          - 5 * cos3U * cosV * sinU
-          - 80 * cos5U * cosV * sinU
-          + 80 * cos7U * cosV * sinU
-        );
-
-        const z = (2 / 15) * (3 + 5 * cosU * sinU) * sinV;
-
-        vertices.push(x * scale, y * scale, z * scale);
+        vertices.push(x * scale, z * scale, y * scale);
         uvs.push(i / uSegments, j / vSegments);
       }
     }
@@ -605,51 +589,116 @@ const WanderingMuseum = ({ onComplete }) => {
     return new THREE.Mesh(geometry, material);
   }
 
-  function createSaddleSurface(scale = 0.8, resolution = 20) {
-    const geometry = new THREE.BufferGeometry();
-    const vertices = [];
-    const indices = [];
+  function createTesseract(scale = 1.0) {
+    // 4D hypercube vertices: all combinations of ±1 in 4 dimensions
+    const verts4D = [];
+    for (let i = 0; i < 16; i++) {
+      verts4D.push([
+        (i & 1) ? 1 : -1,
+        (i & 2) ? 1 : -1,
+        (i & 4) ? 1 : -1,
+        (i & 8) ? 1 : -1,
+      ]);
+    }
 
-    for (let i = 0; i <= resolution; i++) {
-      for (let j = 0; j <= resolution; j++) {
-        const x = (i / resolution - 0.5) * 2;
-        const y = (j / resolution - 0.5) * 2;
-        const z = x * x - y * y;
-        vertices.push(x * scale, z * scale * 0.5, y * scale);
+    // Edges: connect vertices that differ in exactly one coordinate
+    const edges = [];
+    for (let i = 0; i < 16; i++) {
+      for (let j = i + 1; j < 16; j++) {
+        let diff = 0;
+        for (let k = 0; k < 4; k++) {
+          if (verts4D[i][k] !== verts4D[j][k]) diff++;
+        }
+        if (diff === 1) edges.push([i, j]);
       }
     }
 
-    for (let i = 0; i < resolution; i++) {
-      for (let j = 0; j < resolution; j++) {
-        const a = i * (resolution + 1) + j;
-        const b = a + resolution + 1;
-        const c = a + 1;
-        const d = b + 1;
-        indices.push(a, b, c);
-        indices.push(c, b, d);
-      }
-    }
+    // Project 4D → 3D using perspective projection from w
+    function project(v4, angle1, angle2) {
+      // Rotate in xw and yw planes
+      const cosA = Math.cos(angle1), sinA = Math.sin(angle1);
+      const cosB = Math.cos(angle2), sinB = Math.sin(angle2);
 
-    geometry.setIndex(indices);
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.computeVertexNormals();
+      // Rotate xw plane
+      let x = v4[0] * cosA - v4[3] * sinA;
+      let w = v4[0] * sinA + v4[3] * cosA;
+      // Rotate yw plane
+      let y = v4[1] * cosB - w * sinB;
+      w = v4[1] * sinB + w * cosB;
+
+      let z = v4[2];
+
+      // Perspective projection from 4D (camera at w=4)
+      const d = 3;
+      const perspScale = d / (d - w);
+      return {
+        x: x * perspScale * scale,
+        y: y * perspScale * scale,
+        z: z * perspScale * scale,
+        w: w, // store for coloring
+      };
+    }
 
     const group = new THREE.Group();
 
-    const solidMesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-      color: 0xcc5588,
-      roughness: 0.3,
-      metalness: 0.4,
-      side: THREE.DoubleSide
-    }));
-    group.add(solidMesh);
+    // Create small spheres at each vertex
+    const sphereGeom = new THREE.SphereGeometry(0.06 * scale, 8, 6);
+    const vertexMeshes = [];
+    for (let i = 0; i < 16; i++) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x44aaff,
+        emissive: 0x2266cc,
+        emissiveIntensity: 0.6,
+        roughness: 0.2,
+        metalness: 0.8,
+      });
+      const sphere = new THREE.Mesh(sphereGeom, mat);
+      group.add(sphere);
+      vertexMeshes.push(sphere);
+    }
 
-    // Wireframe overlay
-    const wireframe = new THREE.LineSegments(
-      new THREE.WireframeGeometry(geometry),
-      new THREE.LineBasicMaterial({ color: 0xff88aa, linewidth: 1, transparent: true, opacity: 0.3 })
-    );
-    group.add(wireframe);
+    // Create edges as line segments using a buffer geometry
+    const edgePositions = new Float32Array(edges.length * 6); // 2 verts × 3 coords per edge
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3));
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x88ccff,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    group.add(edgeLines);
+
+    // Update function called each frame
+    group.userData.updateTesseract = (time) => {
+      const angle1 = time * 0.3; // xw rotation
+      const angle2 = time * 0.2; // yw rotation
+
+      const projected = verts4D.map(v => project(v, angle1, angle2));
+
+      // Update vertex positions and colors
+      for (let i = 0; i < 16; i++) {
+        const p = projected[i];
+        vertexMeshes[i].position.set(p.x, p.y, p.z);
+        // Color by w depth: blue (far) → cyan (near)
+        const t = (p.w + 1) / 2; // normalize -1..1 → 0..1
+        vertexMeshes[i].material.color.setHSL(0.55 - t * 0.1, 0.8, 0.4 + t * 0.3);
+        vertexMeshes[i].material.emissive.setHSL(0.55 - t * 0.1, 0.8, 0.2 + t * 0.15);
+      }
+
+      // Update edge positions
+      const pos = edgeGeometry.attributes.position.array;
+      for (let e = 0; e < edges.length; e++) {
+        const [i, j] = edges[e];
+        const pi = projected[i], pj = projected[j];
+        pos[e * 6 + 0] = pi.x; pos[e * 6 + 1] = pi.y; pos[e * 6 + 2] = pi.z;
+        pos[e * 6 + 3] = pj.x; pos[e * 6 + 4] = pj.y; pos[e * 6 + 5] = pj.z;
+      }
+      edgeGeometry.attributes.position.needsUpdate = true;
+    };
+
+    // Initial projection
+    group.userData.updateTesseract(0);
 
     return group;
   }
@@ -664,8 +713,7 @@ const WanderingMuseum = ({ onComplete }) => {
       high: {
         sierpinskiLevel: 4, mengerLevel: 3,
         romanescoMaxDepth: 3,
-        gyroidResolution: 30, saddleResolution: 20,
-        torusKnotTubular: 128, torusKnotRadial: 32,
+        gyroidResolution: 30,        torusKnotTubular: 128, torusKnotRadial: 32,
         trefoilTubular: 128, trefoilRadial: 16,
         kleinU: 60, kleinV: 30,
         mobiusSegments: 100,
@@ -674,8 +722,7 @@ const WanderingMuseum = ({ onComplete }) => {
       medium: {
         sierpinskiLevel: 3, mengerLevel: 2,
         romanescoMaxDepth: 2,
-        gyroidResolution: 20, saddleResolution: 14,
-        torusKnotTubular: 64, torusKnotRadial: 16,
+        gyroidResolution: 20,        torusKnotTubular: 64, torusKnotRadial: 16,
         trefoilTubular: 64, trefoilRadial: 8,
         kleinU: 30, kleinV: 15,
         mobiusSegments: 50,
@@ -684,8 +731,7 @@ const WanderingMuseum = ({ onComplete }) => {
       low: {
         sierpinskiLevel: 2, mengerLevel: 1,
         romanescoMaxDepth: 1,
-        gyroidResolution: 12, saddleResolution: 8,
-        torusKnotTubular: 32, torusKnotRadial: 8,
+        gyroidResolution: 12,        torusKnotTubular: 32, torusKnotRadial: 8,
         trefoilTubular: 32, trefoilRadial: 8,
         kleinU: 16, kleinV: 10,
         mobiusSegments: 24,
@@ -1168,12 +1214,13 @@ const WanderingMuseum = ({ onComplete }) => {
         emissive: 0x885522,
         emissiveIntensity: 0.5,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.45,
         roughness: 0.15,
         metalness: 0.5,
         side: THREE.DoubleSide,
         envMap: envTexture,
-        envMapIntensity: 0.8
+        envMapIntensity: 0.8,
+        depthWrite: false
       })
     );
     const kleinPedestal = createPedestal('Klein Bottle', kleinMesh, new THREE.Vector3(0, 0, -15));
@@ -1202,11 +1249,11 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(gyroidPedestal);
     artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
 
-    // M4: Hyperbolic Paraboloid — main corridor east
-    const saddleMesh = createSaddleSurface(0.8, q.saddleResolution);
-    const saddlePedestal = createPedestal('Hyperbolic Paraboloid', saddleMesh, new THREE.Vector3(7, 0, -27.5));
-    scene.add(saddlePedestal);
-    artPieces.push({ mesh: saddlePedestal, artMesh: saddleMesh, id: 'saddle', examined: false, rotatable: true, isHidden: true });
+    // M4: Tesseract — main corridor east
+    const tesseractMesh = createTesseract(0.55);
+    const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(7, 0, -27.5));
+    scene.add(tesseractPedestal);
+    artPieces.push({ mesh: tesseractPedestal, artMesh: tesseractMesh, id: 'tesseract', examined: false, rotatable: true, isHidden: true });
 
     // M5: Stella Octangula — deep west room
     const stellaMesh = createStellaOctangula(0.8);
@@ -2425,6 +2472,11 @@ const WanderingMuseum = ({ onComplete }) => {
           gameStateRef.current.rotationsPerformed += 0.01;
         }
       });
+
+      // Animate tesseract 4D rotation
+      if (tesseractMesh.userData.updateTesseract) {
+        tesseractMesh.userData.updateTesseract(currentTime / 1000);
+      }
 
       // Animate button pulse
       buttonPulseTime += deltaTime * 2;
