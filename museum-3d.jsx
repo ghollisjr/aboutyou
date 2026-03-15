@@ -2067,47 +2067,65 @@ const WanderingMuseum = ({ onComplete }) => {
         });
       }
 
+      // Hover glow helpers: traverse all meshes, handle both emissive and line materials
+      const processedMaterials = new Set(); // Avoid processing shared materials multiple times
+      const setHoverGlow = (piece, on) => {
+        const root = piece.artMesh || piece.mesh;
+        processedMaterials.clear();
+        const traverse = (obj) => {
+          const mat = obj.material;
+          if (mat && !processedMaterials.has(mat)) {
+            processedMaterials.add(mat);
+            if (mat.emissive) {
+              // MeshStandardMaterial, MeshPhongMaterial, etc.
+              if (on) {
+                if (mat._hoverOrigEmissive === undefined) {
+                  mat._hoverOrigEmissive = mat.emissive.getHex();
+                  mat._hoverOrigIntensity = mat.emissiveIntensity;
+                }
+                mat.emissive.setHex(0xffffff);
+                mat.emissiveIntensity = 0.8;
+              } else if (mat._hoverOrigEmissive !== undefined) {
+                mat.emissive.setHex(mat._hoverOrigEmissive);
+                mat.emissiveIntensity = mat._hoverOrigIntensity;
+                delete mat._hoverOrigEmissive;
+                delete mat._hoverOrigIntensity;
+              }
+            } else if (mat.color) {
+              // LineBasicMaterial, MeshBasicMaterial, etc.
+              if (on) {
+                if (mat._hoverOrigColor === undefined) {
+                  mat._hoverOrigColor = mat.color.getHex();
+                }
+                mat.color.setHex(0xffffff);
+              } else if (mat._hoverOrigColor !== undefined) {
+                mat.color.setHex(mat._hoverOrigColor);
+                delete mat._hoverOrigColor;
+              }
+            }
+          }
+          if (obj.children) obj.children.forEach(traverse);
+        };
+        traverse(root);
+      };
+
       // Hover glow: check what piece the player is looking at within range
       const hoverTarget = findTargetPiece();
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
-        // New hover target
         if (hoveredPiece !== hoverTarget) {
           // Restore previous hover
-          if (hoveredPiece && hoveredOriginalEmissive !== null) {
-            const prevMesh = hoveredPiece.artMesh || hoveredPiece.mesh;
-            const prevMat = prevMesh.material;
-            if (prevMat && prevMat.emissive) {
-              prevMat.emissive.setHex(hoveredOriginalEmissive);
-              prevMat.emissiveIntensity = hoveredPiece._origEmissiveIntensity || 0;
-            }
-          }
+          if (hoveredPiece) setHoverGlow(hoveredPiece, false);
           // Set new hover glow
           hoveredPiece = hoverTarget;
-          const hMesh = hoverTarget.artMesh || hoverTarget.mesh;
-          const hMat = hMesh.material;
-          if (hMat && hMat.emissive) {
-            hoveredOriginalEmissive = hMat.emissive.getHex();
-            hoverTarget._origEmissiveIntensity = hMat.emissiveIntensity || 0;
-            hMat.emissive.setHex(0xffffff);
-            hMat.emissiveIntensity = 0.3;
-          } else {
-            hoveredOriginalEmissive = null;
-          }
+          setHoverGlow(hoverTarget, true);
           const action = hoverTarget.isButton ? 'to trip balls' : 'to examine';
           const inputHint = gamepadIndex !== null ? `press A ${action}` : `click ${action}`;
           setInteractPrompt({ name: '', inputHint });
         }
       } else {
-        // No valid target — clear hover
         if (hoveredPiece) {
-          const prevMesh = hoveredPiece.artMesh || hoveredPiece.mesh;
-          const prevMat = prevMesh.material;
-          if (prevMat && prevMat.emissive && hoveredOriginalEmissive !== null) {
-            prevMat.emissive.setHex(hoveredOriginalEmissive);
-            prevMat.emissiveIntensity = hoveredPiece._origEmissiveIntensity || 0;
-          }
+          setHoverGlow(hoveredPiece, false);
           hoveredPiece = null;
-          hoveredOriginalEmissive = null;
           setInteractPrompt(null);
         }
       }
