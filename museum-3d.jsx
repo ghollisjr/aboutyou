@@ -23,7 +23,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const [loading, setLoading] = useState(true);
   const [showFps, setShowFps] = useState(false);
   const [qualityToast, setQualityToast] = useState(null);
-  const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0 });
+  const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0, frameTimeMs: 0 });
   const fpsDisplayRef = useRef(null);
   const qualityRef = useRef('high');
   const totalArtRef = useRef(0);
@@ -2095,16 +2095,18 @@ const WanderingMuseum = ({ onComplete }) => {
       const deltaTime = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
 
-      // FPS counter (update DOM ref directly to avoid re-renders)
+      // Frame time counter (update DOM ref directly to avoid re-renders)
       const fpsData = fpsDataRef.current;
       if (fpsData.lastTime === 0) fpsData.lastTime = currentTime;
       fpsData.frames++;
       if (currentTime - fpsData.lastTime >= 500) {
-        fpsData.value = Math.round(fpsData.frames / ((currentTime - fpsData.lastTime) / 1000));
+        const elapsed = currentTime - fpsData.lastTime;
+        fpsData.frameTimeMs = (elapsed / fpsData.frames).toFixed(1);
+        fpsData.value = Math.round(fpsData.frames / (elapsed / 1000));
         fpsData.frames = 0;
         fpsData.lastTime = currentTime;
         if (fpsDisplayRef.current) {
-          fpsDisplayRef.current.textContent = fpsData.value + ' FPS';
+          fpsDisplayRef.current.textContent = fpsData.frameTimeMs + ' ms (' + fpsData.value + ' fps)';
         }
       }
 
@@ -2733,7 +2735,7 @@ const WanderingMuseum = ({ onComplete }) => {
             pointerEvents: 'none'
           }}
         >
-          -- FPS
+          -- ms
         </div>
       )}
 
