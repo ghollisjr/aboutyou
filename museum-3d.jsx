@@ -442,107 +442,63 @@ const WanderingMuseum = ({ onComplete }) => {
 
   function createApollonianGasket() {
     const group = new THREE.Group();
-    // 2D Apollonian gasket using Descartes Circle Theorem
-    // Rendered as torus rings (circles with thickness) for 3D appearance
-    const circles = []; // { x, y, r }
+    // 3D Apollonian gasket: recursively pack tangent spheres
+    // Limited depth + deduplication to keep sphere count manageable
+    const spheres = []; // { x, y, z, r }
+    const placed = new Set();
 
-    // Descartes Circle Theorem: given 3 mutually tangent circles with curvatures k1,k2,k3,
-    // the 4th tangent circle has curvature k4 = k1+k2+k3 + 2*sqrt(k1*k2 + k2*k3 + k1*k3)
-    // Complex Descartes theorem gives the center.
-
-    // Start with bounding circle (curvature negative = contains others) and 3 inner tangent circles
-    // Bounding circle: r=1, k=-1
-    // Three inner mutually tangent circles: r = 1/(1+2/sqrt(3)), arranged symmetrically
-    const R = 0.9;
-    const r3 = R / (1 + 2 / Math.sqrt(3));
-    const d3 = R - r3;
-
-    // Initial 4 circles: outer + 3 inner
-    const initCircles = [
-      { x: 0, y: 0, r: R, k: -1/R },  // bounding (negative curvature)
-      { x: 0, y: d3, r: r3, k: 1/r3 },
-      { x: d3 * Math.cos(7*Math.PI/6), y: d3 * Math.sin(7*Math.PI/6), r: r3, k: 1/r3 },
-      { x: d3 * Math.cos(11*Math.PI/6), y: d3 * Math.sin(11*Math.PI/6), r: r3, k: 1/r3 }
-    ];
-
-    initCircles.forEach(c => circles.push(c));
-
-    // Recursively find new tangent circles using Descartes theorem
-    function descartesK(k1, k2, k3) {
-      return k1 + k2 + k3 + 2 * Math.sqrt(Math.abs(k1*k2 + k2*k3 + k1*k3));
+    function key(x, y, z, r) {
+      return `${Math.round(x*100)},${Math.round(y*100)},${Math.round(z*100)},${Math.round(r*100)}`;
     }
 
-    // Complex Descartes for center: z4 = (z1*k1 + z2*k2 + z3*k3 + 2*sqrt(k1*k2*z1*z2 + ...)) / k4
-    function descartesCenter(c1, c2, c3, k4) {
-      const w1r = c1.x * c1.k, w1i = c1.y * c1.k;
-      const w2r = c2.x * c2.k, w2i = c2.y * c2.k;
-      const w3r = c3.x * c3.k, w3i = c3.y * c3.k;
+    function addSphere(x, y, z, r, depth) {
+      if (r < 0.04 || depth > 3) return;
+      const k = key(x, y, z, r);
+      if (placed.has(k)) return;
+      placed.add(k);
+      spheres.push({ x, y, z, r, depth });
 
-      // sqrt(k1*k2*z1*z2) etc. — use complex multiplication
-      function cmul(ar, ai, br, bi) { return [ar*br - ai*bi, ar*bi + ai*br]; }
-      function csqrt(re, im) {
-        const mag = Math.sqrt(re*re + im*im);
-        const angle = Math.atan2(im, re) / 2;
-        const r = Math.sqrt(mag);
-        return [r * Math.cos(angle), r * Math.sin(angle)];
+      const nr = r * 0.42;
+      const d = r + nr;
+      // 6 cardinal directions only
+      const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+      for (const [dx, dy, dz] of dirs) {
+        addSphere(x + dx*d, y + dy*d, z + dz*d, nr, depth + 1);
       }
-
-      const [p1r, p1i] = cmul(w1r, w1i, w2r, w2i);
-      const [p2r, p2i] = cmul(w2r, w2i, w3r, w3i);
-      const [p3r, p3i] = cmul(w1r, w1i, w3r, w3i);
-
-      const sumR = p1r + p2r + p3r;
-      const sumI = p1i + p2i + p3i;
-      const [sqR, sqI] = csqrt(sumR, sumI);
-
-      const zr = (w1r + w2r + w3r + 2 * sqR) / k4;
-      const zi = (w1i + w2i + w3i + 2 * sqI) / k4;
-      return { x: zr, y: zi };
     }
 
-    function fillGasket(c1, c2, c3, depth) {
-      if (depth > 5) return;
-      const k4 = descartesK(c1.k, c2.k, c3.k);
-      const r4 = 1 / k4;
-      if (r4 < 0.01 * R) return; // too small to see
-      const center = descartesCenter(c1, c2, c3, k4);
-      const newC = { x: center.x, y: center.y, r: r4, k: k4 };
-      circles.push(newC);
-      // Recurse into 3 new gaps
-      fillGasket(c1, c2, newC, depth + 1);
-      fillGasket(c1, c3, newC, depth + 1);
-      fillGasket(c2, c3, newC, depth + 1);
-    }
+    addSphere(0, 0, 0, 0.45, 0);
 
-    // Fill the 4 initial gaps (3 between inner circles + 3 between each inner and outer)
-    fillGasket(initCircles[0], initCircles[1], initCircles[2], 0);
-    fillGasket(initCircles[0], initCircles[1], initCircles[3], 0);
-    fillGasket(initCircles[0], initCircles[2], initCircles[3], 0);
-    fillGasket(initCircles[1], initCircles[2], initCircles[3], 0);
-
-    // Render each circle as a torus (ring in 3D)
-    const tubeRadius = 0.012;
-    const geoms = [];
-    circles.forEach(c => {
-      const absR = Math.abs(c.r);
-      if (absR < 0.01 * R) return;
-      const g = new THREE.TorusGeometry(absR, tubeRadius, 6, 32);
-      g.translate(c.x, c.y, 0);
-      geoms.push(g);
+    // Merge by depth for color variation — one draw call per level
+    const byDepth = {};
+    spheres.forEach(s => {
+      if (!byDepth[s.depth]) byDepth[s.depth] = [];
+      byDepth[s.depth].push(s);
     });
 
-    const merged = mergeGeometries(geoms);
-    geoms.forEach(g => g.dispose());
+    // Use low-poly spheres, fewer segments for smaller spheres
+    Object.keys(byDepth).forEach(d => {
+      const depth = parseInt(d);
+      const hue = depth * 0.2;
+      const color = new THREE.Color().setHSL(hue, 0.7, 0.55);
+      const material = new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: 0.25,
+        metalness: 0.6,
+        transparent: true,
+        opacity: 0.85
+      });
 
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x44bbff,
-      emissive: 0x113344,
-      emissiveIntensity: 0.4,
-      roughness: 0.2,
-      metalness: 0.7
+      const segs = Math.max(6, 12 - depth * 2);
+      const geoms = byDepth[d].map(s => {
+        const g = new THREE.SphereGeometry(s.r, segs, segs);
+        g.translate(s.x, s.y, s.z);
+        return g;
+      });
+      const merged = mergeGeometries(geoms);
+      geoms.forEach(g => g.dispose());
+      group.add(new THREE.Mesh(merged, material));
     });
-    const mesh = new THREE.Mesh(merged, material);
-    group.add(mesh);
 
     return group;
   }
