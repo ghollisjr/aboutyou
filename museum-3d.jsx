@@ -19,6 +19,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
+  const [loading, setLoading] = useState(true);
   const [showFps, setShowFps] = useState(false);
   const [qualityToast, setQualityToast] = useState(null);
   const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0 });
@@ -619,11 +620,8 @@ const WanderingMuseum = ({ onComplete }) => {
     return group;
   }
 
-  useEffect(() => {
-    // Detect mobile
-    const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    setIsMobile(mobile);
-
+  // Extracted museum init so useEffect can defer it
+  const initMuseum = (mobile) => {
     // Auto-detect quality level
     if (mobile || navigator.hardwareConcurrency <= 4) qualityRef.current = 'medium';
     if (navigator.hardwareConcurrency <= 2) qualityRef.current = 'low';
@@ -2553,7 +2551,13 @@ const WanderingMuseum = ({ onComplete }) => {
         // Normal render
         renderer.render(scene, activeCamera);
       }
+      // Hide loading screen after first frame
+      if (!firstFrameRendered) {
+        firstFrameRendered = true;
+        setLoading(false);
+      }
     };
+    let firstFrameRendered = false;
     animate();
 
     // Finish button handler (via custom event from React onClick)
@@ -2565,7 +2569,7 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     window.addEventListener('museum-finish', finishHandler);
 
-    // Cleanup
+    // Return cleanup function
     return () => {
       window.removeEventListener('gamepadconnected', onGamepadConnected);
       window.removeEventListener('gamepaddisconnected', onGamepadDisconnected);
@@ -2578,7 +2582,7 @@ const WanderingMuseum = ({ onComplete }) => {
       renderer.domElement.removeEventListener('mousemove', onMouseMove);
       renderer.domElement.removeEventListener('click', onClick);
       window.removeEventListener('resize', onResize);
-      
+
       if (mobile) {
         renderer.domElement.removeEventListener('touchstart', onTouchStart);
         renderer.domElement.removeEventListener('touchmove', onTouchMove);
@@ -2596,11 +2600,56 @@ const WanderingMuseum = ({ onComplete }) => {
       }
       renderer.dispose();
     };
+  };
+
+  useEffect(() => {
+    const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobile(mobile);
+
+    // Defer heavy work: double-RAF ensures the loading screen is painted first
+    let cleanupFn = null;
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) {
+          cleanupFn = initMuseum(mobile);
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      if (cleanupFn) cleanupFn();
+    };
   }, [onComplete]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#1a1a2e' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Loading screen */}
+      {loading && (
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: '#1a1a2e',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 400
+        }}>
+          <div style={{
+            color: 'rgba(255,255,255,0.6)',
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: '1.2rem',
+            fontWeight: '300',
+            letterSpacing: '2px'
+          }}>
+            loading museum...
+          </div>
+        </div>
+      )}
 
       {/* FPS counter (F key toggle) */}
       {showFps && (
