@@ -1489,6 +1489,14 @@ const WanderingMuseum = ({ onComplete }) => {
       { x: 8, z: -10, width: 15, depth: 0.5 }     // Interior wall right section
     ];
 
+    // Add collision boxes for pedestals and trip button table
+    artPieces.forEach(piece => {
+      if (piece.isTripExit) return;
+      const pos = piece.mesh.position;
+      // Pedestal base is 1.8x1.8, table is 1.5x1.5 — use 2x2 to match interaction box
+      interiorWallCollisions.push({ x: pos.x, z: pos.z, width: 2, depth: 2 });
+    });
+
     // --- Maze beyond back wall (Z < -20) ---
     // Entry gap in back wall: X=[-2, 4] (6 units wide)
     // Maze extends from Z=-20 to Z=-46, X=-20 to X=20
