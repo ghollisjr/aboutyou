@@ -3100,7 +3100,7 @@ const WanderingMuseum = ({ onComplete }) => {
             <p style={{ opacity: 0.7, marginBottom: '30px', lineHeight: '1.6' }}>
               {isMobile 
                 ? 'Touch left side to move, right side to look around. Tap art pieces to examine them.'
-                : 'Click and drag to look around. WASD to move. Click art pieces to examine them. Gamepad supported!'
+                : 'Mouse to look around. WASD to move. Click art pieces to examine them. Gamepad supported!'
               }
             </p>
             <button
@@ -3195,7 +3195,7 @@ const WanderingMuseum = ({ onComplete }) => {
                 ? 'Left: move | Right: look' 
                 : gamepadConnected 
                   ? '🎮 Gamepad connected | Left stick: move | Right stick: look | A: interact'
-                  : 'Click + drag to look | WASD to move'}
+                  : 'Mouse to look | WASD to move'}
             </div>
             {gamepadConnected && (
               <button
@@ -3349,7 +3349,7 @@ const WanderingMuseum = ({ onComplete }) => {
               opacity: 0.9
             }}
           >
-            leave museum
+            i've seen enough
           </button>
 
           {/* Mobile joystick indicators */}
