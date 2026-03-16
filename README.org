@@ -33,6 +33,21 @@ Pages automatically.
 4. Add to =vite.config.js= rollup inputs
 5. Update =index.html= card from "Coming Soon" to playable
 
+** Museum Trip Starting Points
+The =tripStarts= array in =museum-3d.jsx= defines the random starting
+positions/orientations for the psychedelic trip mode. To add a new one:
+
+1. Enter the trip and use the FPS overlay (press =F=) to find a good
+   =pos= and =fwd= vector
+2. Convert to yaw/pitch:
+   - =yaw = atan2(fwd.x, -fwd.z)=
+   - =pitch = -asin(fwd.y)=
+3. Append to the =tripStarts= array:
+   #+begin_src js
+   { pos: [x, 2, 0], yaw: ..., pitch: ... },
+   #+end_src
+   Note: =y= should stay =2= and =z= should stay =0= (X-axis only movement).
+
 ** PROMPT FOR CLAUDE
 I'm building a Big Five personality assessment using 5 interactive 3D games. I've completed the first game (Museum for Openness). I need help creating the remaining 4 games.
 

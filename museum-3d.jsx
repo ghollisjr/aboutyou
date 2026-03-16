@@ -2221,10 +2221,15 @@ const WanderingMuseum = ({ onComplete }) => {
           if (tripHandle) am.setVolume(tripHandle, 0.6, 0.3);
         }
 
-        // Fixed position offset on X, looking slightly up-left for added difficulty
-        camera.position.set(8, 2, 0);
-        yaw = 0.4;    // ~23° left
-        pitch = -0.25; // ~14° up
+        // Random starting point from fixed list
+        const tripStarts = [
+          { pos: [7.10, 2, 0], yaw: 0.172, pitch: -0.547 },   // fwd: (0.146, 0.521, -0.841)
+          { pos: [19.00, 2, 0], yaw: -0.126, pitch: 0.647 },           // fwd: (-0.100, -0.606, -0.789)
+        ];
+        const start = tripStarts[Math.floor(Math.random() * tripStarts.length)];
+        camera.position.set(...start.pos);
+        yaw = start.yaw;
+        pitch = start.pitch;
 
         if (artPiece.buttonMesh) {
           artPiece.buttonMesh.position.y = 1.08;
@@ -2613,11 +2618,11 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // During trip: constrain to X-axis movement only, lock look direction
       if (trippingRef.current) {
-        // Keyboard: A/D or Left/Right move along X axis
-        if (keys['KeyA'] || keys['ArrowLeft']) {
+        // Keyboard: A/D/W/S and all arrows move along X axis
+        if (keys['KeyA'] || keys['ArrowLeft'] || keys['KeyW'] || keys['ArrowUp']) {
           moveX -= moveSpeed;
         }
-        if (keys['KeyD'] || keys['ArrowRight']) {
+        if (keys['KeyD'] || keys['ArrowRight'] || keys['KeyS'] || keys['ArrowDown']) {
           moveX += moveSpeed;
         }
 
