@@ -830,9 +830,10 @@ const WanderingMuseum = ({ onComplete }) => {
           float pixelYaw = centered.x * angScale;
           float pixelPitch = centered.y * angScale / aspect;
 
-          // Draw rings via hemispheric projection
-          float ringAlpha = 0.0;
-          vec3 ringColor = vec3(0.0);
+          // Draw rings via hemispheric projection — portal style with oscillation
+          vec3 ringGlow = vec3(0.0);   // additive glow accumulator
+          float portalInside = 0.0;    // how many rings enclose this pixel (portal interior)
+          float ringBand = 0.0;        // ring edge brightness
 
           if (ringOpacity > 0.01) {
             for (int i = 0; i < 5; i++) {
@@ -841,43 +842,65 @@ const WanderingMuseum = ({ onComplete }) => {
               float dist = length(toRing);
 
               // Reflect behind-camera rings to front hemisphere
-              // This mirrors through the camera: back-right → front-left
-              // So back rings move opposite to front rings during lateral movement
               if (localDir.z > 0.0) {
                 localDir.x = -localDir.x;
                 localDir.z = -localDir.z;
               }
 
-              // Angular position of ring center in camera space
-              float rYaw = atan(localDir.x, -localDir.z);
-              float rPitch = atan(localDir.y, length(vec2(localDir.x, localDir.z)));
+              // Angular position with per-ring oscillation
+              float fi = float(i);
+              float rYaw = atan(localDir.x, -localDir.z)
+                + sin(time * 1.7 + fi * 2.3) * 0.008
+                + sin(time * 3.1 + fi * 1.1) * 0.004;
+              float rPitch = atan(localDir.y, length(vec2(localDir.x, localDir.z)))
+                + cos(time * 2.1 + fi * 1.7) * 0.006;
 
-              // Angular radius and thickness of ring
-              float aRad = atan(ringRad[i], dist);
+              // Angular radius with breathing
+              float breathe = 1.0 + sin(time * 1.5 + fi * 1.3) * 0.06;
+              float aRad = atan(ringRad[i], dist) * breathe;
               float aThick = atan(0.12, dist);
 
-              // Angular distance from this pixel to ring center (no wrapping needed)
+              // Angular distance from this pixel to ring center
               float dYaw = rYaw - pixelYaw;
               float dPitch = rPitch - pixelPitch;
               float aDist = sqrt(dYaw * dYaw + dPitch * dPitch);
 
-              // Ring shape
-              float ring = smoothstep(aThick, aThick * 0.3, abs(aDist - aRad));
+              // Ring band — glowing edge with soft falloff
+              float edge = abs(aDist - aRad);
+              float ring = smoothstep(aThick * 1.5, 0.0, edge);
+
+              // Outer glow halo
+              float halo = exp(-edge * edge / (aThick * aThick * 8.0)) * 0.4;
 
               // Per-ring pulse when aligned
               float pulse = 1.0;
               if (ringAligned > 0.5) {
-                pulse = sin(time * 10.0 + float(i)) * 0.3 + 0.7;
+                pulse = sin(time * 10.0 + fi) * 0.3 + 0.7;
               }
 
-              float contribution = ring * pulse;
-              if (contribution > ringAlpha) {
-                ringAlpha = contribution;
-                ringColor = ringCol[i];
+              // Additive color contribution (rings blend together)
+              vec3 col = ringCol[i];
+              ringGlow += col * (ring + halo) * pulse * ringOpacity;
+
+              // Track if pixel is inside this ring (for portal interior)
+              if (aDist < aRad) {
+                portalInside += smoothstep(aRad, aRad * 0.5, aDist) * ringOpacity * pulse;
               }
             }
-            ringAlpha *= ringOpacity;
           }
+
+          // Portal interior swirl — visible where rings overlap
+          float swirlAngle = atan(centered.y, centered.x);
+          float swirlDist = length(centered);
+          float swirl = sin(swirlAngle * 3.0 - time * 4.0 + swirlDist * 6.0) * 0.5 + 0.5;
+          float swirl2 = sin(swirlAngle * 5.0 + time * 3.0 - swirlDist * 8.0) * 0.5 + 0.5;
+          vec3 portalSwirl = mix(
+            vec3(0.3, 0.1, 0.6),
+            vec3(0.1, 0.8, 1.0),
+            swirl * swirl2
+          );
+          // Portal interior intensifies with overlap count — 1 ring = subtle, 5 = full portal
+          float portalStrength = smoothstep(1.0, 4.0, portalInside);
 
           // Blend scene and background based on intensity
           vec3 base = mix(
@@ -886,8 +909,9 @@ const WanderingMuseum = ({ onComplete }) => {
             intensity
           );
 
-          // Overlay rings
-          vec3 finalColor = mix(base, ringColor * 2.5, ringAlpha);
+          // Layer: base → portal interior → ring glow
+          vec3 finalColor = mix(base, portalSwirl * 1.5, portalStrength * 0.6);
+          finalColor += ringGlow * 2.0;
 
           gl_FragColor = vec4(finalColor, 1.0);
         }
