@@ -809,14 +809,79 @@ const WanderingMuseum = ({ onComplete }) => {
 
         #define PI 3.14159265
 
+        // Smooth pseudo-noise via layered sin
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 4; i++) {
+            v += a * noise(p);
+            p = rot * p * 2.0;
+            a *= 0.5;
+          }
+          return v;
+        }
+
         void main() {
           vec2 uv = vUv;
+          float aspect = resolution.x / resolution.y;
 
-          // Psychedelic background
-          float r = sin(uv.x * 10.0 + time * 2.0) * 0.5 + 0.5;
-          float g = sin(uv.y * 10.0 + time * 3.0) * 0.5 + 0.5;
-          float b = sin((uv.x + uv.y) * 10.0 + time * 1.5) * 0.5 + 0.5;
-          vec3 background = vec3(r, g, b);
+          // Center and aspect-correct
+          vec2 p = (uv - 0.5) * 2.0;
+          p.x *= aspect;
+
+          // Polar coordinates
+          float dist = length(p);
+          float angle = atan(p.y, p.x);
+
+          // Kaleidoscope: fold angle into N segments
+          float segments = 6.0;
+          float ka = mod(angle, 2.0 * PI / segments);
+          ka = abs(ka - PI / segments);
+          vec2 kp = vec2(cos(ka), sin(ka)) * dist;
+
+          // Tunnel: scroll radial coordinate inward over time
+          float tunnel = 1.0 / (dist + 0.1) + time * 0.8;
+
+          // Domain warp: distort coordinates with fbm
+          vec2 warpUV = kp * 3.0 + vec2(tunnel, time * 0.3);
+          float warp1 = fbm(warpUV);
+          float warp2 = fbm(warpUV + vec2(warp1 * 2.0 + time * 0.2, warp1 * 1.5 - time * 0.15));
+
+          // Color palette — deep purples, cyans, magentas, with hot whites
+          float h1 = sin(warp2 * 6.0 + time * 1.2) * 0.5 + 0.5;
+          float h2 = sin(warp2 * 4.0 - time * 0.8 + 2.0) * 0.5 + 0.5;
+          float h3 = sin(warp1 * 5.0 + time * 0.6 + 4.0) * 0.5 + 0.5;
+
+          vec3 c1 = vec3(0.6, 0.0, 0.8);  // purple
+          vec3 c2 = vec3(0.0, 0.7, 0.9);  // cyan
+          vec3 c3 = vec3(1.0, 0.2, 0.6);  // magenta
+          vec3 c4 = vec3(0.1, 0.0, 0.3);  // deep void
+
+          vec3 background = mix(c4, c1, h1);
+          background = mix(background, c2, h2 * 0.6);
+          background = mix(background, c3, h3 * 0.4);
+
+          // Add tunnel radial glow
+          float tunnelGlow = exp(-dist * 1.5) * (sin(tunnel * 3.0) * 0.3 + 0.5);
+          background += vec3(0.2, 0.1, 0.4) * tunnelGlow;
+
+          // Subtle moiré interference
+          float moire = sin(dist * 30.0 - time * 3.0) * sin(angle * 8.0 + time * 1.5);
+          background += vec3(0.05, 0.08, 0.1) * moire;
 
           // Scene texture (used during transition)
           vec4 sceneColor = texture2D(tDiffuse, uv);
@@ -824,7 +889,6 @@ const WanderingMuseum = ({ onComplete }) => {
 
           // Hemispheric projection: map screen to ±90° viewing angles
           // Rings behind the camera are reflected to front hemisphere
-          float aspect = resolution.x / resolution.y;
           vec2 centered = (uv - 0.5) * 2.0;
           float angScale = PI * 0.5;  // ±90° coverage
           float pixelYaw = centered.x * angScale;
@@ -2019,11 +2083,18 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Pointer lock
     const requestPointerLock = () => {
-      renderer.domElement.requestPointerLock().catch(() => {
-        // Pointer lock failed (probably in iframe), use fallback
+      try {
+        const result = renderer.domElement.requestPointerLock();
+        if (result && result.catch) {
+          result.catch(() => {
+            pointerLockSupported = false;
+            console.log('Pointer lock not available, using click-and-drag fallback');
+          });
+        }
+      } catch (e) {
         pointerLockSupported = false;
         console.log('Pointer lock not available, using click-and-drag fallback');
-      });
+      }
     };
 
     const onPointerLockChange = () => {
@@ -2780,9 +2851,7 @@ const WanderingMuseum = ({ onComplete }) => {
         if (currentTime % 1000 < 16) {
           console.log('Alignment Debug:', {
             position: `${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}`,
-            inPositionX: `${Math.abs(camera.position.x - boxCenter.x).toFixed(2)} < ${boxTolerance.x}`,
-            inPositionY: `${Math.abs(camera.position.y - boxCenter.y).toFixed(2)} < ${boxTolerance.y}`,
-            inPositionZ: `${Math.abs(camera.position.z - boxCenter.z).toFixed(2)} < ${boxTolerance.z}`,
+            posOffsetX: `${Math.abs(camera.position.x).toFixed(2)} < ${positionTolerance}`,
             inPosition,
             forwardVector: `${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}`,
             lookingForward,
