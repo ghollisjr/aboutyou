@@ -25,7 +25,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [showFps, setShowFps] = useState(false);
+  const [showFps, setShowFps] = useState(true);
   const [isPortrait, setIsPortrait] = useState(false);
   const [qualityToast, setQualityToast] = useState(null);
   const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0, frameTimeMs: 0 });
@@ -33,6 +33,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const qualityRef = useRef('high');
   const totalArtRef = useRef(0);
   const audioManagerRef = useRef(null);
+  const enterGameRef = useRef(null);
   const [masterVolume, setMasterVolume] = useState(0.5);
   
   // Update ref when state changes
@@ -736,7 +737,7 @@ const WanderingMuseum = ({ onComplete }) => {
         trefoilTubular: 128, trefoilRadial: 16,
         kleinU: 60, kleinV: 30,
         mobiusSegments: 100,
-        wireframes: true, pixelRatio: window.devicePixelRatio, antialias: true
+        wireframes: true, pixelRatio: mobile ? Math.min(window.devicePixelRatio, 2) : window.devicePixelRatio, antialias: !mobile
       },
       medium: {
         sierpinskiLevel: 3, mengerLevel: 2,
@@ -745,7 +746,7 @@ const WanderingMuseum = ({ onComplete }) => {
         trefoilTubular: 64, trefoilRadial: 8,
         kleinU: 30, kleinV: 15,
         mobiusSegments: 50,
-        wireframes: true, pixelRatio: Math.min(window.devicePixelRatio, 1.5), antialias: true
+        wireframes: true, pixelRatio: Math.min(window.devicePixelRatio, 1.5), antialias: false
       },
       low: {
         sierpinskiLevel: 2, mengerLevel: 1,
@@ -757,6 +758,8 @@ const WanderingMuseum = ({ onComplete }) => {
         wireframes: false, pixelRatio: 1.0, antialias: false
       }
     };
+    // Start mobile at medium quality to avoid high-DPI performance issues
+    if (mobile && qualityRef.current === 'high') qualityRef.current = 'medium';
     const q = qualitySettings[qualityRef.current];
 
     // Three.js setup
@@ -2018,8 +2021,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Player setup
     camera.position.set(0, 1.6, 15);
-    const moveSpeed = 0.1;
-    const lookSpeed = 0.002;
+    const baseMoveSpeed = 0.1;
+    const baseLookSpeed = 0.002;
 
     // Orthographic camera for trip mode - flattens Z axis
     const orthoSize = 10;
@@ -2143,14 +2146,14 @@ const WanderingMuseum = ({ onComplete }) => {
     
     const onMouseMove = (e) => {
       if (pointerLocked) {
-        // Pointer lock mode
-        yaw -= e.movementX * lookSpeed;
-        pitch -= e.movementY * lookSpeed;
+        // Pointer lock mode (event-driven, use base rate)
+        yaw -= e.movementX * baseLookSpeed;
+        pitch -= e.movementY * baseLookSpeed;
         pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
       } else if (mouse.isDragging) {
         // Fallback mode (click and drag)
-        yaw -= e.movementX * lookSpeed;
-        pitch -= e.movementY * lookSpeed;
+        yaw -= e.movementX * baseLookSpeed;
+        pitch -= e.movementY * baseLookSpeed;
         pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
       }
     };
@@ -2339,15 +2342,22 @@ const WanderingMuseum = ({ onComplete }) => {
     renderer.domElement.addEventListener('mousemove', onMouseMove);
     renderer.domElement.addEventListener('click', onClick);
     
-    if (mobile) {
-      // Request fullscreen on first touch (must be direct user gesture on element)
-      const goFullscreen = () => {
-        const el = document.documentElement;
-        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-        if (rfs) rfs.call(el).catch(() => {});
-      };
-      renderer.domElement.addEventListener('touchstart', goFullscreen, { once: true });
+    const goFullscreen = () => {
+      const el = document.documentElement;
+      const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+      if (rfs) rfs.call(el).catch(() => {});
+    };
 
+    // Expose enter-game action so the "enter museum" button can trigger pointer lock / fullscreen
+    enterGameRef.current = () => {
+      if (mobile) {
+        goFullscreen();
+      } else {
+        requestPointerLock();
+      }
+    };
+
+    if (mobile) {
       renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
       renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
       renderer.domElement.addEventListener('touchend', onTouchEnd);
@@ -2414,8 +2424,10 @@ const WanderingMuseum = ({ onComplete }) => {
     const animate = () => {
       requestAnimationFrame(animate);
       const currentTime = performance.now();
-      const deltaTime = (currentTime - lastTime) / 1000;
+      const rawDelta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
+      // Cap delta to handle tab-away, light smoothing to filter occasional spikes
+      const deltaTime = Math.min(rawDelta, 0.1);
 
       // Frame time counter (update DOM ref directly to avoid re-renders)
       const fpsData = fpsDataRef.current;
@@ -2436,8 +2448,8 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       }
 
-      // Rolling FPS monitor for auto-downgrade
-      fpsBuffer[fpsBufferIdx] = deltaTime > 0 ? 1 / deltaTime : 60;
+      // Rolling FPS monitor for auto-downgrade (use raw delta for accuracy)
+      fpsBuffer[fpsBufferIdx] = rawDelta > 0 ? 1 / rawDelta : 60;
       fpsBufferIdx = (fpsBufferIdx + 1) % fpsBuffer.length;
       if (fpsBufferIdx === 0) fpsBufferFilled = true;
 
@@ -2466,6 +2478,11 @@ const WanderingMuseum = ({ onComplete }) => {
           fpsBufferIdx = 0;
         }
       }
+
+      // Frame-rate independent speeds (normalized to 60fps)
+      const timeScale = Math.min(deltaTime * 60, 3); // cap to avoid huge jumps on tab-refocus
+      const moveSpeed = baseMoveSpeed * timeScale;
+      const lookSpeed = baseLookSpeed * timeScale;
 
       // Process gamepad input
       if (gamepadIndex !== null) {
@@ -2537,9 +2554,9 @@ const WanderingMuseum = ({ onComplete }) => {
 
           // Apply look from right stick
           if (rightStickX !== 0 || rightStickY !== 0) {
-            yaw -= rightStickX * 0.05;
+            yaw -= rightStickX * 0.05 * timeScale;
             // Y-axis: negative by default (not inverted), unless invertY is true
-            pitch += (invertYRef.current ? rightStickY : -rightStickY) * 0.05;
+            pitch += (invertYRef.current ? rightStickY : -rightStickY) * 0.05 * timeScale;
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
           }
           
@@ -2781,8 +2798,9 @@ const WanderingMuseum = ({ onComplete }) => {
       artPieces.forEach(piece => {
         if (piece.examined && piece.rotatable) {
           const target = piece.artMesh || piece.mesh;
-          target.rotation.y += 0.01;
-          gameStateRef.current.rotationsPerformed += 0.01;
+          const rotAmount = 0.6 * deltaTime; // ~0.01 at 60fps
+          target.rotation.y += rotAmount;
+          gameStateRef.current.rotationsPerformed += rotAmount;
         }
       });
 
@@ -3197,7 +3215,7 @@ const WanderingMuseum = ({ onComplete }) => {
               }
             </p>
             <button
-              onClick={() => setInstructions(false)}
+              onClick={() => { setInstructions(false); if (enterGameRef.current) enterGameRef.current(); }}
               style={{
                 padding: '12px 32px',
                 background: 'white',
