@@ -774,7 +774,16 @@ const WanderingMuseum = ({ onComplete }) => {
       uniforms: {
         tDiffuse: { value: null },
         time: { value: 0 },
-        intensity: { value: 0 }
+        intensity: { value: 0 },
+        // Ring rendering via cylindrical projection (360° visibility)
+        ringPos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+        ringCol: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()] },
+        ringRad: { value: [0, 0, 0, 0, 0] },
+        ringOpacity: { value: 0.0 },
+        ringAligned: { value: 0.0 },
+        camPos: { value: new THREE.Vector3() },
+        camRotInv: { value: new THREE.Matrix3() },
+        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
       },
       vertexShader: `
         varying vec2 vUv;
@@ -787,30 +796,90 @@ const WanderingMuseum = ({ onComplete }) => {
         uniform sampler2D tDiffuse;
         uniform float time;
         uniform float intensity;
+        uniform vec3 ringPos[5];
+        uniform vec3 ringCol[5];
+        uniform float ringRad[5];
+        uniform float ringOpacity;
+        uniform float ringAligned;
+        uniform vec3 camPos;
+        uniform mat3 camRotInv;
+        uniform vec2 resolution;
         varying vec2 vUv;
-        
+
+        #define PI 3.14159265
+
         void main() {
           vec2 uv = vUv;
-          
-          // Now time is in seconds since trip started, so we can use it directly!
-          // Different speeds for each channel (Hz = cycles per second)
-          float r = sin(uv.x * 10.0 + time * 2.0) * 0.5 + 0.5;  // 2 rad/s ≈ 0.3 Hz
-          float g = sin(uv.y * 10.0 + time * 3.0) * 0.5 + 0.5;  // 3 rad/s ≈ 0.5 Hz
-          float b = sin((uv.x + uv.y) * 10.0 + time * 1.5) * 0.5 + 0.5;  // 1.5 rad/s ≈ 0.24 Hz
-          
+
+          // Psychedelic background
+          float r = sin(uv.x * 10.0 + time * 2.0) * 0.5 + 0.5;
+          float g = sin(uv.y * 10.0 + time * 3.0) * 0.5 + 0.5;
+          float b = sin((uv.x + uv.y) * 10.0 + time * 1.5) * 0.5 + 0.5;
           vec3 background = vec3(r, g, b);
-          
-          // Get circles
-          vec4 circleColor = texture2D(tDiffuse, uv);
-          float brightness = dot(circleColor.rgb, vec3(0.299, 0.587, 0.114));
-          
-          // Blend
-          vec3 finalColor = mix(
+
+          // Scene texture (used during transition)
+          vec4 sceneColor = texture2D(tDiffuse, uv);
+          float sceneBrightness = dot(sceneColor.rgb, vec3(0.299, 0.587, 0.114));
+
+          // Cylindrical projection: map screen UV to viewing angle
+          // Equal angular scale per pixel on both axes → rings appear circular
+          float aspect = resolution.x / resolution.y;
+          vec2 centered = (uv - 0.5) * 2.0;
+          float pixelYaw = centered.x * PI;            // ±PI = 360° horizontal
+          float pixelPitch = centered.y * PI / aspect;  // proportional vertical
+
+          // Draw rings using cylindrical projection
+          float ringAlpha = 0.0;
+          vec3 ringColor = vec3(0.0);
+
+          if (ringOpacity > 0.01) {
+            for (int i = 0; i < 5; i++) {
+              vec3 toRing = ringPos[i] - camPos;
+              vec3 localDir = camRotInv * toRing;
+              float dist = length(toRing);
+
+              // Angular position of ring center in camera space
+              float rYaw = atan(localDir.x, -localDir.z);
+              float rPitch = atan(localDir.y, length(vec2(localDir.x, localDir.z)));
+
+              // Angular radius and thickness of ring
+              float aRad = atan(ringRad[i], dist);
+              float aThick = atan(0.12, dist);
+
+              // Angular distance from this pixel to ring center (with yaw wrapping)
+              float dYaw = rYaw - pixelYaw;
+              dYaw = mod(dYaw + PI, 2.0 * PI) - PI;
+              float dPitch = rPitch - pixelPitch;
+              float aDist = sqrt(dYaw * dYaw + dPitch * dPitch);
+
+              // Ring shape
+              float ring = smoothstep(aThick, aThick * 0.3, abs(aDist - aRad));
+
+              // Per-ring pulse when aligned
+              float pulse = 1.0;
+              if (ringAligned > 0.5) {
+                pulse = sin(time * 10.0 + float(i)) * 0.3 + 0.7;
+              }
+
+              float contribution = ring * pulse;
+              if (contribution > ringAlpha) {
+                ringAlpha = contribution;
+                ringColor = ringCol[i];
+              }
+            }
+            ringAlpha *= ringOpacity;
+          }
+
+          // Blend scene and background based on intensity
+          vec3 base = mix(
+            mix(background, sceneColor.rgb * 2.5, smoothstep(0.01, 0.15, sceneBrightness)),
             background,
-            circleColor.rgb * 2.5,
-            smoothstep(0.01, 0.15, brightness)
+            intensity
           );
-          
+
+          // Overlay rings
+          vec3 finalColor = mix(base, ringColor * 2.5, ringAlpha);
+
           gl_FragColor = vec4(finalColor, 1.0);
         }
       `
@@ -1585,6 +1654,11 @@ const WanderingMuseum = ({ onComplete }) => {
       });
     });
 
+    // Populate trip shader ring uniforms
+    tripShaderMaterial.uniforms.ringPos.value = circlePositions.map(d => d.pos.clone());
+    tripShaderMaterial.uniforms.ringCol.value = circlePositions.map(d => new THREE.Color(d.color));
+    tripShaderMaterial.uniforms.ringRad.value = circlePositions.map(d => d.radius);
+
     // Alignment state
     const alignmentRequired = 2000; // Must stay aligned for 2 seconds
     
@@ -2180,6 +2254,7 @@ const WanderingMuseum = ({ onComplete }) => {
       
       renderer.setSize(window.innerWidth, window.innerHeight);
       portalOverlayMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+      tripShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
 
@@ -2633,12 +2708,17 @@ const WanderingMuseum = ({ onComplete }) => {
         // Show exit zone (DISABLED FOR TESTING)
         // exitZoneMaterial.opacity = Math.min(0.3, exitZoneMaterial.opacity + deltaTime * 2);
         
-        // Make circles visible and always render
+        // Hide 3D ring meshes — rings are drawn by the trip shader via cylindrical projection
         alignmentCircles.forEach(circle => {
-          circle.mesh.visible = true;
-          circle.material.opacity = Math.min(0.8, circle.material.opacity + deltaTime * 2);
-          circle.mesh.lookAt(activeCamera.position);
+          circle.mesh.visible = false;
         });
+
+        // Update trip shader ring uniforms
+        tripShaderMaterial.uniforms.ringOpacity.value = Math.min(0.8, tripShaderMaterial.uniforms.ringOpacity.value + deltaTime * 2);
+        tripShaderMaterial.uniforms.camPos.value.copy(camera.position);
+        camera.updateMatrixWorld(true);
+        const camRotInv = new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse);
+        tripShaderMaterial.uniforms.camRotInv.value.copy(camRotInv);
 
         // Check alignment - now checking 3D box
         const boxTolerance = { x: 2.0, y: 5.0, z: 20.0 }; // Box: 4 wide, 10 tall, spans full Z
@@ -2690,11 +2770,8 @@ const WanderingMuseum = ({ onComplete }) => {
           
           console.log(`⏱️ Alignment time: ${alignmentTimeRef.current.toFixed(0)}ms / ${alignmentRequired}ms (${progress.toFixed(1)}%)`);
           
-          // Pulse circles when aligned
-          alignmentCircles.forEach((circle, i) => {
-            const pulse = Math.sin(currentTime / 100 + i) * 0.3 + 0.7;
-            circle.material.opacity = pulse;
-          });
+          // Pulse rings when aligned (handled in shader)
+          tripShaderMaterial.uniforms.ringAligned.value = 1.0;
           
           // Portal overlay intensifies as you stay aligned
           const progressRatio = Math.min(1, alignmentTimeRef.current / alignmentRequired);
@@ -2709,6 +2786,7 @@ const WanderingMuseum = ({ onComplete }) => {
           }
         } else {
           setAlignmentProgress(0);
+          tripShaderMaterial.uniforms.ringAligned.value = 0.0;
           // Fade portal overlay out when not aligned
           portalOverlayMaterial.uniforms.intensity.value = Math.max(0, portalOverlayMaterial.uniforms.intensity.value - deltaTime * 2);
           if (portalOverlayMaterial.uniforms.intensity.value <= 0) {
@@ -2749,6 +2827,8 @@ const WanderingMuseum = ({ onComplete }) => {
           circle.material.opacity = 0;
           circle.mesh.visible = false;
         });
+        tripShaderMaterial.uniforms.ringOpacity.value = 0;
+        tripShaderMaterial.uniforms.ringAligned.value = 0;
         portalOverlayQuad.visible = false;
         portalOverlayMaterial.uniforms.intensity.value = 0;
         setIsAligned(false);
