@@ -1261,11 +1261,11 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(gyroidPedestal);
     artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
 
-    // M4: Tesseract — main corridor east
+    // M4: Tesseract — central walkway
     const tesseractMesh = createTesseract(0.55);
     tesseractMesh.userData.skipWireframe = true;
     tesseractMesh.userData.bottomExtent = 1.20; // numerically computed worst-case during 4D rotation
-    const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(7, 0, -27.5));
+    const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(1, 0, -34.5));
     scene.add(tesseractPedestal);
     artPieces.push({ mesh: tesseractPedestal, artMesh: tesseractMesh, id: 'tesseract', examined: false, rotatable: true, isHidden: true });
 
