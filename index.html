@@ -510,22 +510,19 @@
         if (hasScores) {
             scoresPanel.style.display = '';
 
-            // On mobile, insert label cells for aligned 2-column grid
-            if (window.innerWidth <= 600) {
-                document.querySelectorAll('.score-row:not(.score-header)').forEach(row => {
-                    const spans = Array.from(row.querySelectorAll('span'));
-                    // Insert label before each span, reading from data-label
-                    spans.forEach(span => {
-                        const label = span.getAttribute('data-label');
-                        if (label) {
-                            const labelEl = document.createElement('span');
-                            labelEl.className = 'score-label';
-                            labelEl.textContent = label;
-                            row.insertBefore(labelEl, span);
-                        }
-                    });
+            // Always insert label cells (hidden on desktop via CSS, shown on mobile)
+            document.querySelectorAll('.score-row:not(.score-header)').forEach(row => {
+                const spans = Array.from(row.querySelectorAll('span'));
+                spans.forEach(span => {
+                    const label = span.getAttribute('data-label');
+                    if (label) {
+                        const labelEl = document.createElement('span');
+                        labelEl.className = 'score-label';
+                        labelEl.textContent = label;
+                        row.insertBefore(labelEl, span);
+                    }
                 });
-            }
+            });
         }
 
         // Reset session button
