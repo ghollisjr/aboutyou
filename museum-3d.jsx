@@ -821,14 +821,15 @@ const WanderingMuseum = ({ onComplete }) => {
           vec4 sceneColor = texture2D(tDiffuse, uv);
           float sceneBrightness = dot(sceneColor.rgb, vec3(0.299, 0.587, 0.114));
 
-          // Cylindrical projection: map screen UV to viewing angle
-          // Equal angular scale per pixel on both axes → rings appear circular
+          // Hemispheric projection: map screen to ±90° viewing angles
+          // Rings behind the camera are reflected to front hemisphere
           float aspect = resolution.x / resolution.y;
           vec2 centered = (uv - 0.5) * 2.0;
-          float pixelYaw = centered.x * PI;            // ±PI = 360° horizontal
-          float pixelPitch = centered.y * PI / aspect;  // proportional vertical
+          float angScale = PI * 0.5;  // ±90° coverage
+          float pixelYaw = centered.x * angScale;
+          float pixelPitch = centered.y * angScale / aspect;
 
-          // Draw rings using cylindrical projection
+          // Draw rings via hemispheric projection
           float ringAlpha = 0.0;
           vec3 ringColor = vec3(0.0);
 
@@ -838,6 +839,14 @@ const WanderingMuseum = ({ onComplete }) => {
               vec3 localDir = camRotInv * toRing;
               float dist = length(toRing);
 
+              // Reflect behind-camera rings to front hemisphere
+              // This mirrors through the camera: back-right → front-left
+              // So back rings move opposite to front rings during lateral movement
+              if (localDir.z > 0.0) {
+                localDir.x = -localDir.x;
+                localDir.z = -localDir.z;
+              }
+
               // Angular position of ring center in camera space
               float rYaw = atan(localDir.x, -localDir.z);
               float rPitch = atan(localDir.y, length(vec2(localDir.x, localDir.z)));
@@ -846,9 +855,8 @@ const WanderingMuseum = ({ onComplete }) => {
               float aRad = atan(ringRad[i], dist);
               float aThick = atan(0.12, dist);
 
-              // Angular distance from this pixel to ring center (with yaw wrapping)
+              // Angular distance from this pixel to ring center (no wrapping needed)
               float dYaw = rYaw - pixelYaw;
-              dYaw = mod(dYaw + PI, 2.0 * PI) - PI;
               float dPitch = rPitch - pixelPitch;
               float aDist = sqrt(dYaw * dYaw + dPitch * dPitch);
 
