@@ -2117,10 +2117,10 @@ const WanderingMuseum = ({ onComplete }) => {
           if (tripHandle) am.setVolume(tripHandle, 0.6, 0.3);
         }
 
-        // Fixed position offset on X, looking straight down -Z at the rings
+        // Fixed position offset on X, looking slightly up-left for added difficulty
         camera.position.set(8, 2, 0);
-        yaw = 0;
-        pitch = 0;
+        yaw = 0.4;    // ~23° left
+        pitch = -0.25; // ~14° up
 
         if (artPiece.buttonMesh) {
           artPiece.buttonMesh.position.y = 1.08;
@@ -2174,6 +2174,7 @@ const WanderingMuseum = ({ onComplete }) => {
     let hoveredOriginalEmissive = null;
 
     const onClick = (e) => {
+      if (trippingRef.current) return;
       if (!mobile && pointerLockSupported && !pointerLocked) return;
       if (skipNextClick) { skipNextClick = false; return; }
 
@@ -2447,9 +2448,9 @@ const WanderingMuseum = ({ onComplete }) => {
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
           }
           
-          // A button (button 0) - interact with art
+          // A button (button 0) - interact with art (disabled during trip)
           const aPressed = gamepad.buttons[0]?.pressed;
-          if (aPressed && !gamepadAWasPressed) {
+          if (aPressed && !gamepadAWasPressed && !trippingRef.current) {
             const target = findTargetPiece();
             if (target) activatePiece(target);
           }
@@ -2611,7 +2612,7 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Hover feedback: oscillation for art pieces, vignette for trip button
-      const hoverTarget = findTargetPiece();
+      const hoverTarget = trippingRef.current ? null : findTargetPiece();
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
         if (hoveredPiece !== hoverTarget) {
           hoveredPiece = hoverTarget;
@@ -2739,20 +2740,15 @@ const WanderingMuseum = ({ onComplete }) => {
         const camRotInv = new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse);
         tripShaderMaterial.uniforms.camRotInv.value.copy(camRotInv);
 
-        // Check alignment - now checking 3D box
-        const boxTolerance = { x: 2.0, y: 5.0, z: 20.0 }; // Box: 4 wide, 10 tall, spans full Z
-        const boxCenter = { x: 0, y: 5, z: 0 };
-        const angleTolerance = 0.15; // About 8.6 degrees
-        
-        // Check if player is inside 3D box
-        const inPositionX = Math.abs(camera.position.x - boxCenter.x) < boxTolerance.x;
-        const inPositionY = Math.abs(camera.position.y - boxCenter.y) < boxTolerance.y;
-        const inPositionZ = Math.abs(camera.position.z - boxCenter.z) < boxTolerance.z;
-        const inPosition = inPositionX && inPositionY && inPositionZ;
-        
-        // Check if looking towards circles (forward or backward along Z axis)
+        // Check alignment — strict position and look direction
+        const positionTolerance = 0.5;  // ±0.5 units on X axis
+        const angleTolerance = 0.06;    // ~3.4 degrees
+
+        const inPosition = Math.abs(camera.position.x) < positionTolerance;
+
+        // Check if looking along Z axis (either direction)
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        const lookingForward = Math.abs(forward.z) > Math.cos(angleTolerance) && Math.abs(forward.x) < Math.sin(angleTolerance);
+        const lookingForward = Math.abs(forward.z) > Math.cos(angleTolerance) && Math.abs(forward.x) < Math.sin(angleTolerance) && Math.abs(forward.y) < Math.sin(angleTolerance);
         
         const aligned = inPosition && lookingForward;
         
