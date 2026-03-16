@@ -309,7 +309,8 @@ const WanderingMuseum = ({ onComplete }) => {
       opacity: 0.6,
       roughness: 0.2,
       metalness: 0.5,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false
     });
     const mat2 = new THREE.MeshStandardMaterial({
       color: 0xff44aa,
@@ -317,7 +318,8 @@ const WanderingMuseum = ({ onComplete }) => {
       opacity: 0.6,
       roughness: 0.2,
       metalness: 0.5,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false
     });
 
     const geom1 = new THREE.TetrahedronGeometry(size);
@@ -971,8 +973,6 @@ const WanderingMuseum = ({ onComplete }) => {
       map: wallTexture,
       roughness: 0.85,
       metalness: 0.05,
-      transparent: true,
-      opacity: 1.0
     });
 
     // Main room walls
@@ -1090,7 +1090,7 @@ const WanderingMuseum = ({ onComplete }) => {
       const labelTex = new THREE.CanvasTexture(labelCanvas);
       const labelPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(1.2, 0.3),
-        new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
+        new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, depthWrite: false })
       );
       labelPlane.position.set(0, 0.6, 0.92);
       group.add(labelPlane);
@@ -1118,6 +1118,7 @@ const WanderingMuseum = ({ onComplete }) => {
               wireframeMat
             );
             wire.userData.isQualityWireframe = true;
+            if (!obj.frustumCulled) wire.frustumCulled = false;
             obj.add(wire);
           }
         });
@@ -1130,6 +1131,7 @@ const WanderingMuseum = ({ onComplete }) => {
       );
       interactionBox.position.y = 1.75;
       interactionBox.userData.isInteractionBox = true;
+      interactionBox.layers.set(1); // Remove from default camera layer (0) so it never renders
       group.add(interactionBox);
 
       group.position.set(position.x, position.y, position.z);
@@ -1409,6 +1411,7 @@ const WanderingMuseum = ({ onComplete }) => {
     );
     tableInteractionBox.position.y = 1;
     tableInteractionBox.userData.isInteractionBox = true;
+    tableInteractionBox.layers.set(1);
     tableGroup.add(tableInteractionBox);
 
     // Pulsing animation for button
@@ -1984,6 +1987,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     const findTargetPiece = () => {
       const raycaster = new THREE.Raycaster();
+      raycaster.layers.set(1); // Only test interaction boxes (layer 1)
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       raycaster.far = maxInteractDistance;
       const boxes = interactionBoxes.map(ib => ib.box);
@@ -2226,7 +2230,11 @@ const WanderingMuseum = ({ onComplete }) => {
         fpsData.frames = 0;
         fpsData.lastTime = currentTime;
         if (fpsDisplayRef.current) {
-          fpsDisplayRef.current.textContent = fpsData.frameTimeMs + ' ms (' + fpsData.value + ' fps)';
+          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+          fpsDisplayRef.current.textContent =
+            fpsData.frameTimeMs + ' ms (' + fpsData.value + ' fps)\n' +
+            'pos: ' + camera.position.x.toFixed(2) + ', ' + camera.position.y.toFixed(2) + ', ' + camera.position.z.toFixed(2) + '\n' +
+            'fwd: ' + fwd.x.toFixed(3) + ', ' + fwd.y.toFixed(3) + ', ' + fwd.z.toFixed(3);
         }
       }
 
@@ -2889,7 +2897,8 @@ const WanderingMuseum = ({ onComplete }) => {
             fontFamily: 'monospace',
             fontSize: '14px',
             zIndex: 300,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            whiteSpace: 'pre'
           }}
         >
           -- ms
