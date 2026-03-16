@@ -3233,8 +3233,8 @@ const WanderingMuseum = ({ onComplete }) => {
             </h2>
             <p style={{ opacity: 0.7, marginBottom: '30px', lineHeight: '1.6' }}>
               {isMobile 
-                ? 'Touch left side to move, right side to look around. Tap art pieces to examine them.'
-                : 'Mouse to look around. WASD to move. Click art pieces to examine them. Gamepad supported!'
+                ? 'touch left side to move, right side to look around.'
+                : 'mouse to look around. wasd to move. gamepad supported.'
               }
             </p>
             <button
