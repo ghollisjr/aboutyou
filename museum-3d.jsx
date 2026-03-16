@@ -2034,15 +2034,10 @@ const WanderingMuseum = ({ onComplete }) => {
           if (tripHandle) am.setVolume(tripHandle, 0.6, 0.3);
         }
 
-        const randomX = (Math.random() - 0.5) * 30; // -15 to 15
-        const randomZ = (Math.random() - 0.5) * 30; // -15 to 15 (main room only)
-        camera.position.set(
-          Math.max(-19, Math.min(19, randomX)),
-          1.6,
-          Math.max(-19, Math.min(19, randomZ))
-        );
-        yaw = Math.random() * Math.PI * 2;
-        pitch = (Math.random() - 0.5) * 0.5;
+        // Fixed position offset on X, looking straight down -Z at the rings
+        camera.position.set(8, 2, 0);
+        yaw = 0;
+        pitch = 0;
 
         if (artPiece.buttonMesh) {
           artPiece.buttonMesh.position.y = 1.08;
@@ -2319,40 +2314,37 @@ const WanderingMuseum = ({ onComplete }) => {
           
           // Apply movement from left stick
           if (leftStickX !== 0 || leftStickY !== 0) {
-            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            forward.y = 0;
-            forward.normalize();
-            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            
-            const moveX = (-leftStickY * forward.x + leftStickX * right.x) * moveSpeed;
-            const moveZ = (-leftStickY * forward.z + leftStickX * right.z) * moveSpeed;
-            
-            const newX = camera.position.x + moveX;
-            const newZ = camera.position.z + moveZ;
-            
-            // Check X axis movement
-            if (!checkCollision(newX, camera.position.z)) {
-              camera.position.x = newX;
-            }
-            
-            // Check Z axis movement
-            if (!checkCollision(camera.position.x, newZ)) {
-              camera.position.z = newZ;
-            }
-          }
-          
-          // Vertical movement with shoulder buttons when tripping
-          if (trippingRef.current) {
-            // L1/LB (button 4) - go up
-            if (gamepad.buttons[4]?.pressed) {
-              camera.position.y += moveSpeed;
-            }
-            // L2/LT (button 6) - go down  
-            if (gamepad.buttons[6]?.pressed) {
-              camera.position.y -= moveSpeed;
+            if (trippingRef.current) {
+              // Trip mode: only X-axis movement from left stick horizontal
+              const gpMoveX = leftStickX * moveSpeed;
+              const newX = camera.position.x + gpMoveX;
+              if (!checkCollision(newX, camera.position.z)) {
+                camera.position.x = newX;
+              }
+            } else {
+              const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+              forward.y = 0;
+              forward.normalize();
+              const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+
+              const moveX = (-leftStickY * forward.x + leftStickX * right.x) * moveSpeed;
+              const moveZ = (-leftStickY * forward.z + leftStickX * right.z) * moveSpeed;
+
+              const newX = camera.position.x + moveX;
+              const newZ = camera.position.z + moveZ;
+
+              // Check X axis movement
+              if (!checkCollision(newX, camera.position.z)) {
+                camera.position.x = newX;
+              }
+
+              // Check Z axis movement
+              if (!checkCollision(camera.position.x, newZ)) {
+                camera.position.z = newZ;
+              }
             }
           }
-          
+
           // Apply look from right stick
           if (rightStickX !== 0 || rightStickY !== 0) {
             yaw -= rightStickX * 0.05;
@@ -2397,65 +2389,82 @@ const WanderingMuseum = ({ onComplete }) => {
       let moveY = 0; // Vertical movement
       let moveZ = 0;
 
-      // Keyboard movement
-      if (keys['KeyW'] || keys['ArrowUp']) {
-        moveX += forward.x * moveSpeed;
-        moveZ += forward.z * moveSpeed;
-      }
-      if (keys['KeyS'] || keys['ArrowDown']) {
-        moveX -= forward.x * moveSpeed;
-        moveZ -= forward.z * moveSpeed;
-      }
-      if (keys['KeyA'] || keys['ArrowLeft']) {
-        moveX -= right.x * moveSpeed;
-        moveZ -= right.z * moveSpeed;
-      }
-      if (keys['KeyD'] || keys['ArrowRight']) {
-        moveX += right.x * moveSpeed;
-        moveZ += right.z * moveSpeed;
-      }
-
-      // Vertical movement (only when tripping - flying mode)
+      // During trip: constrain to X-axis movement only, lock look direction
       if (trippingRef.current) {
-        if (keys['KeyQ'] || keys['Space']) { // Q or Space to go up
-          moveY += moveSpeed;
+        // Keyboard: A/D or Left/Right move along X axis
+        if (keys['KeyA'] || keys['ArrowLeft']) {
+          moveX -= moveSpeed;
         }
-        if (keys['KeyE'] || keys['ShiftLeft'] || keys['ShiftRight']) { // E or Shift to go down
-          moveY -= moveSpeed;
+        if (keys['KeyD'] || keys['ArrowRight']) {
+          moveX += moveSpeed;
+        }
+
+        // Mobile joystick: only horizontal component moves along X
+        const joystickRadius = 50;
+        const deadZone = 5;
+        if (moveTouch.id !== null) {
+          const dx = moveTouch.currentX - moveTouch.startX;
+          const dist = Math.abs(dx);
+          if (dist > deadZone) {
+            const clamped = Math.min(dist, joystickRadius);
+            const nx = Math.sign(dx) * clamped / joystickRadius;
+            moveX += nx * moveSpeed * 0.5;
+          }
+        }
+
+      } else {
+        // Keyboard movement
+        if (keys['KeyW'] || keys['ArrowUp']) {
+          moveX += forward.x * moveSpeed;
+          moveZ += forward.z * moveSpeed;
+        }
+        if (keys['KeyS'] || keys['ArrowDown']) {
+          moveX -= forward.x * moveSpeed;
+          moveZ -= forward.z * moveSpeed;
+        }
+        if (keys['KeyA'] || keys['ArrowLeft']) {
+          moveX -= right.x * moveSpeed;
+          moveZ -= right.z * moveSpeed;
+        }
+        if (keys['KeyD'] || keys['ArrowRight']) {
+          moveX += right.x * moveSpeed;
+          moveZ += right.z * moveSpeed;
+        }
+
+        // Mobile joystick movement (clamped to max radius)
+        const joystickRadius = 50; // px — full speed at this distance
+        const deadZone = 5;
+
+        if (moveTouch.id !== null) {
+          const dx = moveTouch.currentX - moveTouch.startX;
+          const dy = moveTouch.currentY - moveTouch.startY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist > deadZone) {
+            const clamped = Math.min(dist, joystickRadius);
+            const nx = (dx / dist) * clamped / joystickRadius;
+            const ny = (dy / dist) * clamped / joystickRadius;
+
+            moveX -= ny * forward.x * moveSpeed * 0.5;
+            moveZ -= ny * forward.z * moveSpeed * 0.5;
+            moveX += nx * right.x * moveSpeed * 0.5;
+            moveZ += nx * right.z * moveSpeed * 0.5;
+          }
         }
       }
 
-      // Mobile joystick movement (clamped to max radius)
-      const joystickRadius = 50; // px — full speed at this distance
-      const deadZone = 5;
-
-      if (moveTouch.id !== null) {
-        const dx = moveTouch.currentX - moveTouch.startX;
-        const dy = moveTouch.currentY - moveTouch.startY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist > deadZone) {
-          const clamped = Math.min(dist, joystickRadius);
-          const nx = (dx / dist) * clamped / joystickRadius;
-          const ny = (dy / dist) * clamped / joystickRadius;
-
-          moveX -= ny * forward.x * moveSpeed * 0.5;
-          moveZ -= ny * forward.z * moveSpeed * 0.5;
-          moveX += nx * right.x * moveSpeed * 0.5;
-          moveZ += nx * right.z * moveSpeed * 0.5;
-        }
-      }
-
-      // Mobile look joystick (clamped, continuous rotation)
+      // Mobile look joystick (clamped, continuous rotation) — always active
+      const joystickRadiusLook = 50;
+      const deadZoneLook = 5;
       if (lookTouch.id !== null) {
         const dx = lookTouch.currentX - lookTouch.startX;
         const dy = lookTouch.currentY - lookTouch.startY;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist > deadZone) {
-          const clamped = Math.min(dist, joystickRadius);
-          const nx = (dx / dist) * clamped / joystickRadius;
-          const ny = (dy / dist) * clamped / joystickRadius;
+        if (dist > deadZoneLook) {
+          const clamped = Math.min(dist, joystickRadiusLook);
+          const nx = (dx / dist) * clamped / joystickRadiusLook;
+          const ny = (dy / dist) * clamped / joystickRadiusLook;
 
           yaw -= nx * lookSpeed * 7;
           pitch -= ny * lookSpeed * 7;
@@ -2478,11 +2487,10 @@ const WanderingMuseum = ({ onComplete }) => {
         camera.position.z = newZ;
       }
       
-      // Apply Y movement (no collision check when flying)
+      // Apply Y movement
       if (trippingRef.current) {
-        camera.position.y = newY;
-        // Constrain vertical bounds
-        camera.position.y = Math.max(0.5, Math.min(15, camera.position.y));
+        // Lock Y at ring height during trip
+        camera.position.y = 2;
       } else {
         // Keep at ground level when not tripping
         camera.position.y = 1.6;
