@@ -2040,15 +2040,31 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       }
 
-      // Visual feedback - pulse emissive
-      const feedbackMesh = artPiece.artMesh || artPiece.mesh;
-      const feedbackMat = feedbackMesh.material;
-      if (feedbackMat && !artPiece.isButton && !artPiece.isTripExit) {
-        const originalEmissive = feedbackMat.emissive?.getHex() || 0x000000;
-        feedbackMat.emissive = new THREE.Color(0xffffff);
-        setTimeout(() => {
-          if (feedbackMat) feedbackMat.emissive = new THREE.Color(originalEmissive);
-        }, 300);
+      // Visual feedback - pulse emissive (traverse to handle Groups and line materials)
+      if (!artPiece.isButton && !artPiece.isTripExit) {
+        const feedbackRoot = artPiece.artMesh || artPiece.mesh;
+        const restores = [];
+        feedbackRoot.traverse(obj => {
+          const mat = obj.material;
+          if (!mat) return;
+          if (mat.emissive) {
+            const orig = mat.emissive.getHex();
+            mat.emissive.set(0xffffff);
+            restores.push(() => mat.emissive.set(orig));
+          } else if (mat.color) {
+            const orig = mat.color.getHex();
+            const hadVertexColors = mat.vertexColors;
+            mat.color.set(0xffffff);
+            if (hadVertexColors) { mat.vertexColors = false; mat.needsUpdate = true; }
+            restores.push(() => {
+              mat.color.set(orig);
+              if (hadVertexColors) { mat.vertexColors = true; mat.needsUpdate = true; }
+            });
+          }
+        });
+        if (restores.length > 0) {
+          setTimeout(() => restores.forEach(fn => fn()), 300);
+        }
       }
 
       gameStateRef.current.timeSpentPerPiece[artPiece.id] = Date.now();
