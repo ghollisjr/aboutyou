@@ -4,6 +4,7 @@ import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { AudioManager } from './src/lib/audio.js';
 
 const WanderingMuseum = ({ onComplete }) => {
   const containerRef = useRef(null);
@@ -30,6 +31,8 @@ const WanderingMuseum = ({ onComplete }) => {
   const fpsDisplayRef = useRef(null);
   const qualityRef = useRef('high');
   const totalArtRef = useRef(0);
+  const audioManagerRef = useRef(null);
+  const [masterVolume, setMasterVolume] = useState(0.5);
   
   // Update ref when state changes
   useEffect(() => {
@@ -1765,6 +1768,9 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Finish game function - defined early so it's accessible from event handlers
     const finishGame = () => {
+      // Fade out all audio on game end
+      am.stopAll();
+
       const gameState = gameStateRef.current;
       const totalTime = (Date.now() - gameState.startTime) / 1000;
 
@@ -1999,6 +2005,8 @@ const WanderingMuseum = ({ onComplete }) => {
       gameStateRef.current.artPiecesExamined.add(artPiece.id);
       setExaminedCount(gameStateRef.current.artPiecesExamined.size);
 
+      if (am.initialized) am.play('examine');
+
       if (artPiece.isHidden) {
         gameStateRef.current.hiddenAreasFound.add(artPiece.id);
       }
@@ -2008,6 +2016,13 @@ const WanderingMuseum = ({ onComplete }) => {
         gameStateRef.current.trippedBalls = true;
         setIsTripping(true);
         tripStartTime = performance.now();
+
+        // Crossfade: ambient down, trip music up
+        if (am.initialized) {
+          if (ambientHandle) am.setVolume(ambientHandle, 0.05, 0.3);
+          tripHandle = am.play('trip', { loop: true, volume: 0, fadeIn: 0 });
+          if (tripHandle) am.setVolume(tripHandle, 0.6, 0.3);
+        }
 
         const randomX = (Math.random() - 0.5) * 30; // -15 to 15
         const randomZ = (Math.random() - 0.5) * 30; // -15 to 15 (main room only)
@@ -2144,6 +2159,37 @@ const WanderingMuseum = ({ onComplete }) => {
     const fpsBuffer = new Float32Array(180); // ~3 seconds at 60fps
     let fpsBufferIdx = 0;
     let fpsBufferFilled = false;
+
+    // Audio setup
+    const am = new AudioManager();
+    audioManagerRef.current = am;
+    am.init();
+    am.setMasterVolume(0.5);
+
+    const audioManifest = {
+      footstep: '/aboutyou/audio/footstep.mp3',
+      examine:  '/aboutyou/audio/examine.mp3',
+      ambient:  '/aboutyou/audio/ambient.mp3',
+      bass:     '/aboutyou/audio/bass-sweep.mp3',
+      trip:     '/aboutyou/audio/trip-music.mp3',
+      portal:   '/aboutyou/audio/portal-charge.mp3',
+    };
+    let ambientHandle = null;
+    let bassHandle = null;
+    let tripHandle = null;
+    let portalChargeHandle = null;
+    let stepPhase = 0;
+    let prevCamX = 0;
+    let prevCamZ = 0;
+    let audioLoaded = false;
+
+    am.loadAll(audioManifest).then(() => {
+      audioLoaded = true;
+      ambientHandle = am.play('ambient', { loop: true, volume: 0.3, fadeIn: 2 });
+      bassHandle = am.play('bass', { loop: true, volume: 0 });
+      prevCamX = camera.position.x;
+      prevCamZ = camera.position.z;
+    });
 
     // Game loop
     let lastTime = performance.now();
@@ -2645,6 +2691,36 @@ const WanderingMuseum = ({ onComplete }) => {
         setAlignmentProgress(0);
       }
 
+      // Audio per-frame updates
+      if (am.initialized && audioLoaded) {
+        // Footsteps: accumulate step phase from camera position delta
+        const dx = camera.position.x - prevCamX;
+        const dz = camera.position.z - prevCamZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        prevCamX = camera.position.x;
+        prevCamZ = camera.position.z;
+        stepPhase += dist;
+        if (stepPhase >= 2.5) {
+          stepPhase -= 2.5;
+          am.play('footstep', { volume: 0.4 });
+        }
+
+        // Bass sweep: volume tracks button hover vignette
+        if (bassHandle) {
+          am.setVolume(bassHandle, buttonVignetteRef.current * 0.5);
+        }
+
+        // Portal charge: start/stop based on alignment
+        if (trippingRef.current) {
+          if (wasAlignedRef.current && !portalChargeHandle) {
+            portalChargeHandle = am.play('portal', { volume: 0.7 });
+          } else if (!wasAlignedRef.current && portalChargeHandle) {
+            am.stop(portalChargeHandle, { fadeOut: 0.3 });
+            portalChargeHandle = null;
+          }
+        }
+      }
+
       // Update trip effect
       if (trippingRef.current) {
         // Use elapsed time since trip started (in seconds)
@@ -2729,6 +2805,8 @@ const WanderingMuseum = ({ onComplete }) => {
         containerRef.current.removeChild(renderer.domElement);
       }
       renderer.dispose();
+      am.dispose();
+      audioManagerRef.current = null;
     };
   };
 
@@ -3060,6 +3138,34 @@ const WanderingMuseum = ({ onComplete }) => {
               {interactPrompt.inputHint}
             </div>
           )}
+
+          {/* Volume slider */}
+          <div style={{
+            position: 'absolute',
+            bottom: '80px',
+            right: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            opacity: 0.6
+          }}>
+            <span style={{ color: 'white', fontFamily: 'system-ui, sans-serif', fontSize: '12px' }}>
+              {masterVolume === 0 ? '\u{1F507}' : '\u{1F50A}'}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={masterVolume}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                setMasterVolume(v);
+                if (audioManagerRef.current) audioManagerRef.current.setMasterVolume(v);
+              }}
+              style={{ width: '80px', cursor: 'pointer' }}
+            />
+          </div>
 
           <button
             onClick={() => {
