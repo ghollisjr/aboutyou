@@ -2101,11 +2101,7 @@ const WanderingMuseum = ({ onComplete }) => {
     };
 
     const onPointerLockChange = () => {
-      const wasLocked = pointerLocked;
       pointerLocked = document.pointerLockElement === renderer.domElement;
-      if (!wasLocked && pointerLocked) {
-        skipNextClick = true;
-      }
     };
 
     const onPointerLockError = () => {
@@ -2131,6 +2127,7 @@ const WanderingMuseum = ({ onComplete }) => {
       if (!mobile) {
         if (pointerLockSupported && !pointerLocked) {
           requestPointerLock();
+          skipNextClick = true; // skip the click event from this same mousedown
         } else if (!pointerLockSupported) {
           // Fallback: click and drag
           mouse.isDragging = true;
