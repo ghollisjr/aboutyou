@@ -26,6 +26,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const buttonVignetteRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [showFps, setShowFps] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
   const [qualityToast, setQualityToast] = useState(null);
   const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0, frameTimeMs: 0 });
   const fpsDisplayRef = useRef(null);
@@ -717,6 +718,11 @@ const WanderingMuseum = ({ onComplete }) => {
 
   // Extracted museum init so useEffect can defer it
   const initMuseum = (mobile) => {
+    // Lock to landscape on mobile
+    if (mobile && screen.orientation?.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+
     // Auto-detect quality level
     if (mobile || navigator.hardwareConcurrency <= 4) qualityRef.current = 'medium';
     if (navigator.hardwareConcurrency <= 2) qualityRef.current = 'low';
@@ -1929,9 +1935,9 @@ const WanderingMuseum = ({ onComplete }) => {
     document.addEventListener('pointerlockchange', onPointerLockChange);
     document.addEventListener('pointerlockerror', onPointerLockError);
 
-    // Mobile joystick state
-    let joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0 };
-    let lookTouch = { active: false, lastX: 0, lastY: 0 };
+    // Mobile joystick state — tracked by touch.identifier
+    let moveTouch = { id: null, startX: 0, startY: 0, currentX: 0, currentY: 0 };
+    let lookTouch = { id: null, startX: 0, startY: 0, currentX: 0, currentY: 0 };
 
     // Event listeners
     const onKeyDown = (e) => {
@@ -2097,52 +2103,59 @@ const WanderingMuseum = ({ onComplete }) => {
       if (target) activatePiece(target);
     };
 
-    // Touch controls for mobile
+    // Touch controls for mobile — identifier-based dual joystick
     const onTouchStart = (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
         if (touch.clientX < window.innerWidth / 2) {
-          // Left side - joystick
-          joystick = {
-            active: true,
-            startX: touch.clientX,
-            startY: touch.clientY,
-            currentX: touch.clientX,
-            currentY: touch.clientY
-          };
+          // Left side - movement joystick
+          if (moveTouch.id === null) {
+            moveTouch = {
+              id: touch.identifier,
+              startX: touch.clientX,
+              startY: touch.clientY,
+              currentX: touch.clientX,
+              currentY: touch.clientY
+            };
+          }
         } else {
-          // Right side - look
-          lookTouch = {
-            active: true,
-            lastX: touch.clientX,
-            lastY: touch.clientY
-          };
+          // Right side - look joystick
+          if (lookTouch.id === null) {
+            lookTouch = {
+              id: touch.identifier,
+              startX: touch.clientX,
+              startY: touch.clientY,
+              currentX: touch.clientX,
+              currentY: touch.clientY
+            };
+          }
         }
       }
     };
 
     const onTouchMove = (e) => {
       e.preventDefault();
-      for (let i = 0; i < e.touches.length; i++) {
-        const touch = e.touches[i];
-        if (joystick.active && touch.clientX < window.innerWidth / 2) {
-          joystick.currentX = touch.clientX;
-          joystick.currentY = touch.clientY;
-        } else if (lookTouch.active && touch.clientX >= window.innerWidth / 2) {
-          const deltaX = touch.clientX - lookTouch.lastX;
-          const deltaY = touch.clientY - lookTouch.lastY;
-          yaw -= deltaX * lookSpeed * 2;
-          pitch -= deltaY * lookSpeed * 2;
-          pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-          lookTouch.lastX = touch.clientX;
-          lookTouch.lastY = touch.clientY;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === moveTouch.id) {
+          moveTouch.currentX = touch.clientX;
+          moveTouch.currentY = touch.clientY;
+        } else if (touch.identifier === lookTouch.id) {
+          lookTouch.currentX = touch.clientX;
+          lookTouch.currentY = touch.clientY;
         }
       }
     };
 
     const onTouchEnd = (e) => {
-      joystick.active = false;
-      lookTouch.active = false;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === moveTouch.id) {
+          moveTouch = { id: null, startX: 0, startY: 0, currentX: 0, currentY: 0 };
+        } else if (touch.identifier === lookTouch.id) {
+          lookTouch = { id: null, startX: 0, startY: 0, currentX: 0, currentY: 0 };
+        }
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -2412,20 +2425,41 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       }
 
-      // Mobile joystick movement
-      if (joystick.active) {
-        const deltaX = joystick.currentX - joystick.startX;
-        const deltaY = joystick.currentY - joystick.startY;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        if (distance > 5) {
-          const normalizedX = deltaX / 100;
-          const normalizedY = deltaY / 100;
-          
-          moveX -= normalizedY * forward.x * moveSpeed;
-          moveZ -= normalizedY * forward.z * moveSpeed;
-          moveX += normalizedX * right.x * moveSpeed;
-          moveZ += normalizedX * right.z * moveSpeed;
+      // Mobile joystick movement (clamped to max radius)
+      const joystickRadius = 50; // px — full speed at this distance
+      const deadZone = 5;
+
+      if (moveTouch.id !== null) {
+        const dx = moveTouch.currentX - moveTouch.startX;
+        const dy = moveTouch.currentY - moveTouch.startY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > deadZone) {
+          const clamped = Math.min(dist, joystickRadius);
+          const nx = (dx / dist) * clamped / joystickRadius;
+          const ny = (dy / dist) * clamped / joystickRadius;
+
+          moveX -= ny * forward.x * moveSpeed * 0.5;
+          moveZ -= ny * forward.z * moveSpeed * 0.5;
+          moveX += nx * right.x * moveSpeed * 0.5;
+          moveZ += nx * right.z * moveSpeed * 0.5;
+        }
+      }
+
+      // Mobile look joystick (clamped, continuous rotation)
+      if (lookTouch.id !== null) {
+        const dx = lookTouch.currentX - lookTouch.startX;
+        const dy = lookTouch.currentY - lookTouch.startY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > deadZone) {
+          const clamped = Math.min(dist, joystickRadius);
+          const nx = (dx / dist) * clamped / joystickRadius;
+          const ny = (dy / dist) * clamped / joystickRadius;
+
+          yaw -= nx * lookSpeed * 7;
+          pitch -= ny * lookSpeed * 7;
+          pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
         }
       }
 
@@ -2489,7 +2523,7 @@ const WanderingMuseum = ({ onComplete }) => {
             }
           }
           const action = hoverTarget.isButton ? 'to trip balls' : 'to examine';
-          const inputHint = gamepadIndex !== null ? `press A ${action}` : `click ${action}`;
+          const inputHint = gamepadIndex !== null ? `press A ${action}` : mobile ? `touch ${action}` : `click ${action}`;
           setInteractPrompt({ name: '', inputHint });
         }
         if (hoveredPiece.isButton) {
@@ -2838,6 +2872,13 @@ const WanderingMuseum = ({ onComplete }) => {
     const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     setIsMobile(mobile);
 
+    // Portrait detection for mobile
+    const checkOrientation = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    if (mobile) {
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+    }
+
     // Defer heavy work: double-RAF ensures the loading screen is painted first
     let cleanupFn = null;
     let cancelled = false;
@@ -2852,6 +2893,7 @@ const WanderingMuseum = ({ onComplete }) => {
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      if (mobile) window.removeEventListener('resize', checkOrientation);
       if (cleanupFn) cleanupFn();
     };
   }, [onComplete]);
@@ -3205,28 +3247,66 @@ const WanderingMuseum = ({ onComplete }) => {
             leave museum
           </button>
 
-          {/* Mobile joystick indicator */}
+          {/* Mobile joystick indicators */}
           {isMobile && (
-            <div style={{
-              position: 'absolute',
-              bottom: '100px',
-              left: '40px',
-              width: '80px',
-              height: '80px',
-              border: '2px solid rgba(255,255,255,0.3)',
-              borderRadius: '50%',
-              pointerEvents: 'none'
-            }}>
+            <>
+              {/* Left joystick - movement */}
               <div style={{
                 position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '30px',
-                height: '30px',
-                background: 'rgba(255,255,255,0.4)',
-                borderRadius: '50%'
-              }} />
+                bottom: '100px',
+                left: '40px',
+                width: '80px',
+                height: '80px',
+                border: '2px solid rgba(255,255,255,0.3)',
+                borderRadius: '50%',
+                pointerEvents: 'none'
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '30px',
+                  height: '30px',
+                  background: 'rgba(255,255,255,0.4)',
+                  borderRadius: '50%'
+                }} />
+              </div>
+              {/* Right joystick - look */}
+              <div style={{
+                position: 'absolute',
+                bottom: '100px',
+                right: '40px',
+                width: '80px',
+                height: '80px',
+                border: '2px solid rgba(255,255,255,0.3)',
+                borderRadius: '50%',
+                pointerEvents: 'none'
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '30px',
+                  height: '30px',
+                  background: 'rgba(255,255,255,0.4)',
+                  borderRadius: '50%'
+                }} />
+              </div>
+            </>
+          )}
+
+          {/* Portrait orientation warning */}
+          {isMobile && isPortrait && (
+            <div style={{
+              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.95)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500
+            }}>
+              <div style={{ color: 'white', textAlign: 'center', fontFamily: 'system-ui' }}>
+                <div style={{ fontSize: '3rem' }}>⟳</div>
+                <p>rotate your device to landscape</p>
+              </div>
             </div>
           )}
         </>
