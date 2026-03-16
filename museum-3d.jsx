@@ -2615,7 +2615,7 @@ const WanderingMuseum = ({ onComplete }) => {
           if (dist > deadZone) {
             const clamped = Math.min(dist, joystickRadius);
             const nx = Math.sign(dx) * clamped / joystickRadius;
-            moveX += nx * moveSpeed * 0.5;
+            moveX += nx * moveSpeed;
           }
         }
 
@@ -2652,10 +2652,10 @@ const WanderingMuseum = ({ onComplete }) => {
             const nx = (dx / dist) * clamped / joystickRadius;
             const ny = (dy / dist) * clamped / joystickRadius;
 
-            moveX -= ny * forward.x * moveSpeed * 0.5;
-            moveZ -= ny * forward.z * moveSpeed * 0.5;
-            moveX += nx * right.x * moveSpeed * 0.5;
-            moveZ += nx * right.z * moveSpeed * 0.5;
+            moveX -= ny * forward.x * moveSpeed;
+            moveZ -= ny * forward.z * moveSpeed;
+            moveX += nx * right.x * moveSpeed;
+            moveZ += nx * right.z * moveSpeed;
           }
         }
       }
@@ -2673,8 +2673,8 @@ const WanderingMuseum = ({ onComplete }) => {
           const nx = (dx / dist) * clamped / joystickRadiusLook;
           const ny = (dy / dist) * clamped / joystickRadiusLook;
 
-          yaw -= nx * lookSpeed * 7;
-          pitch -= ny * lookSpeed * 7;
+          yaw -= nx * lookSpeed * 15;
+          pitch -= ny * lookSpeed * 15;
           pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
         }
       }
