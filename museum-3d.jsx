@@ -25,7 +25,7 @@ const WanderingMuseum = ({ onComplete }) => {
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [showFps, setShowFps] = useState(true);
+  const [showFps, setShowFps] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
   const [qualityToast, setQualityToast] = useState(null);
   const fpsDataRef = useRef({ frames: 0, lastTime: 0, value: 0, frameTimeMs: 0 });
