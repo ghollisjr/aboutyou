@@ -241,9 +241,19 @@
             display: grid;
             grid-template-columns: 2fr 2fr 2fr 1.5fr 1fr;
             align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid #1a1a2e;
+            padding: 0;
+            border-bottom: 2px solid #555;
+            margin-bottom: 4px;
             font-size: 0.8rem;
+        }
+
+        .score-row span {
+            padding: 10px 8px;
+            border-right: 1px solid #333;
+        }
+
+        .score-row span:last-child {
+            border-right: none;
         }
 
         .score-row:last-child {
@@ -251,9 +261,8 @@
         }
 
         .score-header {
-            border-bottom: 1px solid #333;
-            padding-bottom: 8px;
-            margin-bottom: 4px;
+            border-bottom: 2px solid #555;
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .score-header span {
@@ -282,6 +291,10 @@
             font-size: 0.8rem;
         }
 
+        .score-label {
+            display: none;
+        }
+
         .scores-empty {
             text-align: center;
             color: #777;
@@ -303,12 +316,72 @@
         }
 
         @media (max-width: 600px) {
-            h1 { font-size: 1.4rem; }
-            .container { padding: 24px 14px; }
+            h1 { font-size: 1.2rem; }
+            .subtitle { font-size: 0.5rem; margin-bottom: 30px; }
+            .container { padding: 20px 10px; }
             .games-grid {
                 grid-template-columns: 1fr;
-                gap: 16px;
+                gap: 12px;
             }
+            .game-card { padding: 20px 14px; }
+            .game-icon { font-size: 2rem; margin-bottom: 10px; }
+            .game-title { font-size: 0.6rem; }
+            .game-status { font-size: 0.4rem; }
+
+            .scores-panel { padding: 16px 12px; }
+            .scores-panel h2 { font-size: 0.65rem; }
+
+            /* Transpose scores table: hide header, JS adds .score-label elements */
+            .score-row.score-header {
+                display: none;
+            }
+            .score-row {
+                display: grid;
+                grid-template-columns: 10em 1fr;
+                gap: 0;
+                padding: 0;
+                font-size: 0.55rem;
+                border: 1px solid #333;
+                border-radius: 4px;
+                margin-bottom: 20px;
+                padding-bottom: 0;
+                overflow: hidden;
+                border-bottom: 3px solid #555;
+            }
+            .score-row:last-child { margin-bottom: 0; border-bottom: 1px solid #333; }
+            /* Reset all span styles from desktop */
+            .score-row span {
+                padding: 6px 10px;
+                border: none;
+                border-bottom: 1px solid #2a2a3e;
+                text-align: left !important;
+                font-size: 0.55rem;
+            }
+            /* Labels: left column */
+            .score-row .score-label {
+                display: block;
+                grid-column: 1;
+                color: #bbb;
+                letter-spacing: 1px;
+                border-right: 1px solid #333;
+                border-bottom: 1px solid #2a2a3e;
+                background: rgba(255, 255, 255, 0.03);
+            }
+            /* Values: right column */
+            .score-row .score-game,
+            .score-row .score-detail,
+            .score-row .score-trait,
+            .score-row .score-value {
+                grid-column: 2;
+            }
+            /* No bottom border on last row */
+            .score-row span:last-child,
+            .score-row .score-label:nth-last-of-type(1) {
+                border-bottom: none;
+            }
+
+            .coin-insert { font-size: 0.4rem; margin-top: 30px; }
+            .footer { font-size: 0.35rem; margin-top: 40px; }
         }
     </style>
 </head>
@@ -415,11 +488,11 @@
                 const row = document.createElement('li');
                 row.className = 'score-row';
                 row.innerHTML = `
-                    <span class="score-game">🏛️ MUSEUM</span>
-                    <span class="score-detail">${method}</span>
-                    <span class="score-detail">${m.uniqueDescriptions}/${m.totalArt || '?'} FOUND</span>
-                    <span class="score-trait">OPENNESS</span>
-                    <span class="score-value" style="text-align:right">${pct}%</span>
+                    <span class="score-game" data-label="GAME">🏛️ MUSEUM</span>
+                    <span class="score-detail" data-label="METHOD">${method}</span>
+                    <span class="score-detail" data-label="PROGRESS">${m.uniqueDescriptions}/${m.totalArt || '?'} FOUND</span>
+                    <span class="score-trait" data-label="TRAIT">OPENNESS</span>
+                    <span class="score-value" data-label="SCORE" style="text-align:right">${pct}%</span>
                 `;
                 scoresList.appendChild(row);
                 hasScores = true;
@@ -430,6 +503,23 @@
 
         if (hasScores) {
             scoresPanel.style.display = '';
+
+            // On mobile, insert label cells for aligned 2-column grid
+            if (window.innerWidth <= 600) {
+                document.querySelectorAll('.score-row:not(.score-header)').forEach(row => {
+                    const spans = Array.from(row.querySelectorAll('span'));
+                    // Insert label before each span, reading from data-label
+                    spans.forEach(span => {
+                        const label = span.getAttribute('data-label');
+                        if (label) {
+                            const labelEl = document.createElement('span');
+                            labelEl.className = 'score-label';
+                            labelEl.textContent = label;
+                            row.insertBefore(labelEl, span);
+                        }
+                    });
+                });
+            }
         }
 
         // Reset session button
