@@ -719,6 +719,7 @@ const WanderingMuseum = ({ onComplete }) => {
   // Extracted museum init so useEffect can defer it
   const initMuseum = (mobile) => {
     // Lock to landscape on mobile
+    // Landscape lock on mobile
     if (mobile && screen.orientation?.lock) {
       screen.orientation.lock('landscape').catch(() => {});
     }
@@ -2243,6 +2244,14 @@ const WanderingMuseum = ({ onComplete }) => {
     renderer.domElement.addEventListener('click', onClick);
     
     if (mobile) {
+      // Request fullscreen on first touch (must be direct user gesture on element)
+      const goFullscreen = () => {
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+        if (rfs) rfs.call(el).catch(() => {});
+      };
+      renderer.domElement.addEventListener('touchstart', goFullscreen, { once: true });
+
       renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
       renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
       renderer.domElement.addEventListener('touchend', onTouchEnd);
@@ -2265,6 +2274,8 @@ const WanderingMuseum = ({ onComplete }) => {
       tripShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
+    document.addEventListener('fullscreenchange', onResize);
+    document.addEventListener('webkitfullscreenchange', onResize);
 
     // Rolling FPS monitor for auto-downgrade
     const fpsBuffer = new Float32Array(180); // ~3 seconds at 60fps
@@ -2942,6 +2953,8 @@ const WanderingMuseum = ({ onComplete }) => {
       renderer.domElement.removeEventListener('mousemove', onMouseMove);
       renderer.domElement.removeEventListener('click', onClick);
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('fullscreenchange', onResize);
+      document.removeEventListener('webkitfullscreenchange', onResize);
 
       if (mobile) {
         renderer.domElement.removeEventListener('touchstart', onTouchStart);
@@ -2995,7 +3008,7 @@ const WanderingMuseum = ({ onComplete }) => {
   }, [onComplete]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#1a1a2e' }}>
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#1a1a2e' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Loading screen */}
@@ -3287,7 +3300,7 @@ const WanderingMuseum = ({ onComplete }) => {
           {/* Volume slider */}
           <div style={{
             position: 'absolute',
-            bottom: '80px',
+            top: '20px',
             right: '20px',
             display: 'flex',
             alignItems: 'center',
