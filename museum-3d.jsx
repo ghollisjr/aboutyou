@@ -3034,13 +3034,7 @@ const WanderingMuseum = ({ onComplete }) => {
             fontSize: '14px',
             opacity: 0.6
           }}>
-            <div>
-              Art examined: {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0)} / {totalArtRef.current}
-              {examinedCount - (gameStateRef.current.artPiecesExamined.has('tripButton') ? 1 : 0) - (gameStateRef.current.artPiecesExamined.has('tripPortal') ? 1 : 0) >= totalArtRef.current && !isTripping && (
-                <span style={{ color: '#00ff00', marginLeft: '10px' }}>✓ Complete!</span>
-              )}
-            </div>
-            <div style={{ marginTop: '5px', fontSize: '12px', opacity: 0.5 }}>
+            <div style={{ fontSize: '12px', opacity: 0.5 }}>
               {isMobile 
                 ? 'Left: move | Right: look' 
                 : gamepadConnected 
@@ -3063,18 +3057,6 @@ const WanderingMuseum = ({ onComplete }) => {
               >
                 Y-Axis: {invertY ? 'Inverted' : 'Normal'}
               </button>
-            )}
-            {isTripping && (
-              <div style={{ 
-                marginTop: '8px', 
-                fontSize: '16px', 
-                opacity: 1.0, 
-                color: '#ffffff', 
-                fontWeight: 'bold',
-                textShadow: '0 0 10px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)'
-              }}>
-                ✨ reality.exe has stopped working ✨
-              </div>
             )}
           </div>
 
