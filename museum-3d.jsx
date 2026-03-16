@@ -2156,7 +2156,7 @@ const WanderingMuseum = ({ onComplete }) => {
     };
 
     // Max interaction distance
-    const maxInteractDistance = 8;
+    const maxInteractDistance = 3;
 
     // Shared function to find what piece the player is looking at within range
     // Collect all interaction boxes for efficient raycasting
