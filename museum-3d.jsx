@@ -2172,13 +2172,19 @@ const WanderingMuseum = ({ onComplete }) => {
       });
     });
 
+    // Cached objects to avoid per-frame allocations
+    const _forward = new THREE.Vector3();
+    const _right = new THREE.Vector3();
+    const _resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+    const _raycaster = new THREE.Raycaster();
+    _raycaster.layers.set(1);
+    const _screenCenter = new THREE.Vector2(0, 0);
+    const _interactionBoxArray = interactionBoxes.map(ib => ib.box);
+
     const findTargetPiece = () => {
-      const raycaster = new THREE.Raycaster();
-      raycaster.layers.set(1); // Only test interaction boxes (layer 1)
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      raycaster.far = maxInteractDistance;
-      const boxes = interactionBoxes.map(ib => ib.box);
-      const intersects = raycaster.intersectObjects(boxes, false);
+      _raycaster.setFromCamera(_screenCenter, camera);
+      _raycaster.far = maxInteractDistance;
+      const intersects = _raycaster.intersectObjects(_interactionBoxArray, false);
 
       if (intersects.length > 0) {
         const hit = intersects[0].object;
@@ -2376,6 +2382,7 @@ const WanderingMuseum = ({ onComplete }) => {
       orthoCamera.updateProjectionMatrix();
       
       renderer.setSize(window.innerWidth, window.innerHeight);
+      _resolution.set(window.innerWidth, window.innerHeight);
       portalOverlayMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
       tripShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     };
@@ -2419,15 +2426,20 @@ const WanderingMuseum = ({ onComplete }) => {
       prevCamZ = camera.position.z;
     });
 
-    // Game loop
+    // Game loop — fixed simulation timestep for smooth movement
+    const FIXED_DT = 1 / 60;
+    let lastHoverTarget = null;
     let lastTime = performance.now();
+    let accumulator = 0;
     const animate = () => {
       requestAnimationFrame(animate);
       const currentTime = performance.now();
       const rawDelta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
-      // Cap delta to handle tab-away, light smoothing to filter occasional spikes
-      const deltaTime = Math.min(rawDelta, 0.1);
+      // Cap to avoid spiral-of-death on tab-away
+      accumulator += Math.min(rawDelta, 0.1);
+      // Use rawDelta for FPS display/monitoring, FIXED_DT for simulation
+      const deltaTime = FIXED_DT;
 
       // Frame time counter (update DOM ref directly to avoid re-renders)
       const fpsData = fpsDataRef.current;
@@ -2440,7 +2452,7 @@ const WanderingMuseum = ({ onComplete }) => {
         fpsData.frames = 0;
         fpsData.lastTime = currentTime;
         if (fpsDisplayRef.current) {
-          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+          const fwd = _forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
           fpsDisplayRef.current.textContent =
             fpsData.frameTimeMs + ' ms (' + fpsData.value + ' fps)\n' +
             'pos: ' + camera.position.x.toFixed(2) + ', ' + camera.position.y.toFixed(2) + ', ' + camera.position.z.toFixed(2) + '\n' +
@@ -2479,11 +2491,14 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       }
 
-      // Frame-rate independent speeds (normalized to 60fps)
-      const timeScale = Math.min(deltaTime * 60, 3); // cap to avoid huge jumps on tab-refocus
-      const moveSpeed = baseMoveSpeed * timeScale;
-      const lookSpeed = baseLookSpeed * timeScale;
+      // Fixed-timestep simulation loop for smooth movement
+      const simSteps = Math.min(Math.floor(accumulator / FIXED_DT), 4); // max 4 steps to avoid spiral
+      accumulator -= simSteps * FIXED_DT;
+      // moveSpeed/lookSpeed are per-tick at fixed 60fps
+      const moveSpeed = baseMoveSpeed;
+      const lookSpeed = baseLookSpeed;
 
+      for (let _simStep = 0; _simStep < simSteps; _simStep++) {
       // Process gamepad input
       if (gamepadIndex !== null) {
         const gamepads = navigator.getGamepads();
@@ -2529,10 +2544,10 @@ const WanderingMuseum = ({ onComplete }) => {
                 camera.position.x = newX;
               }
             } else {
-              const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+              const forward = _forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
               forward.y = 0;
               forward.normalize();
-              const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+              const right = _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
 
               const moveX = (-leftStickY * forward.x + leftStickX * right.x) * moveSpeed;
               const moveZ = (-leftStickY * forward.z + leftStickX * right.z) * moveSpeed;
@@ -2554,9 +2569,9 @@ const WanderingMuseum = ({ onComplete }) => {
 
           // Apply look from right stick
           if (rightStickX !== 0 || rightStickY !== 0) {
-            yaw -= rightStickX * 0.05 * timeScale;
+            yaw -= rightStickX * 0.05;
             // Y-axis: negative by default (not inverted), unless invertY is true
-            pitch += (invertYRef.current ? rightStickY : -rightStickY) * 0.05 * timeScale;
+            pitch += (invertYRef.current ? rightStickY : -rightStickY) * 0.05;
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
           }
           
@@ -2587,10 +2602,10 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Movement
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      const forward = _forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
       forward.y = 0;
       forward.normalize();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const right = _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
 
       let moveX = 0;
       let moveY = 0; // Vertical movement
@@ -2713,6 +2728,8 @@ const WanderingMuseum = ({ onComplete }) => {
         camera.position.z = Math.max(-45.5, Math.min(19, camera.position.z));
       }
 
+      } // end fixed-timestep simulation loop
+
       // Track path
       if (gameStateRef.current.pathTaken.length === 0 || 
           currentTime - gameStateRef.current.pathTaken[gameStateRef.current.pathTaken.length - 1].time > 500) {
@@ -2724,7 +2741,11 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Hover feedback: oscillation for art pieces, vignette for trip button
-      const hoverTarget = trippingRef.current ? null : findTargetPiece();
+      // Throttle raycasting on mobile (every 3rd frame)
+      if (!mobile || (fpsData.frames % 3 === 0)) {
+        lastHoverTarget = trippingRef.current ? null : findTargetPiece();
+      }
+      const hoverTarget = lastHoverTarget;
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
         if (hoveredPiece !== hoverTarget) {
           hoveredPiece = hoverTarget;
@@ -2798,7 +2819,7 @@ const WanderingMuseum = ({ onComplete }) => {
       artPieces.forEach(piece => {
         if (piece.examined && piece.rotatable) {
           const target = piece.artMesh || piece.mesh;
-          const rotAmount = 0.6 * deltaTime; // ~0.01 at 60fps
+          const rotAmount = 0.01; // fixed per frame at ~60fps
           target.rotation.y += rotAmount;
           gameStateRef.current.rotationsPerformed += rotAmount;
         }
@@ -2806,7 +2827,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Animate tesseract 4D rotation
       if (tesseractMesh.userData.updateTesseract) {
-        tesseractMesh.userData.updateTesseract(currentTime / 1000, new THREE.Vector2(window.innerWidth, window.innerHeight));
+        tesseractMesh.userData.updateTesseract(currentTime / 1000, _resolution);
       }
 
       // Animate button pulse
@@ -2860,7 +2881,7 @@ const WanderingMuseum = ({ onComplete }) => {
         const inPosition = Math.abs(camera.position.x) < positionTolerance;
 
         // Check if looking along Z axis (either direction)
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const forward = _forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
         const lookingForward = Math.abs(forward.z) > Math.cos(angleTolerance) && Math.abs(forward.x) < Math.sin(angleTolerance) && Math.abs(forward.y) < Math.sin(angleTolerance);
         
         const aligned = inPosition && lookingForward;
