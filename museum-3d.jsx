@@ -1267,7 +1267,7 @@ const WanderingMuseum = ({ onComplete }) => {
         new THREE.PlaneGeometry(1.2, 0.3),
         new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, depthWrite: false })
       );
-      labelPlane.position.set(0, 0.6, 0.92);
+      labelPlane.position.set(0, 1.0, 0.92);
       group.add(labelPlane);
 
       // Art mesh on top — compute bounding box so it sits just above pedestal
@@ -1321,7 +1321,7 @@ const WanderingMuseum = ({ onComplete }) => {
       envMap: envTexture,
       envMapIntensity: 1.0
     });
-    const teapotMesh = createTeapot(1.0, teapotMaterial);
+    const teapotMesh = createTeapot(0.5, teapotMaterial);
     const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-8, 0, -5));
     scene.add(teapotPedestal);
     artPieces.push({ mesh: teapotPedestal, artMesh: teapotMesh, id: 'teapot', examined: false, rotatable: true });
@@ -1576,7 +1576,7 @@ const WanderingMuseum = ({ onComplete }) => {
       transparent: true
     });
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), btnLabelMaterial);
-    label.position.set(0, 0.5, 0.78);
+    label.position.set(0, 0.85, 0.78);
     tableGroup.add(label);
     
     // Invisible interaction volume for trip button table
@@ -2740,7 +2740,7 @@ const WanderingMuseum = ({ onComplete }) => {
         camera.position.y = 2;
       } else {
         // Keep at ground level when not tripping
-        camera.position.y = 1.6;
+        camera.position.y = 2;
       }
 
       // Constrain player within horizontal bounds
@@ -3485,7 +3485,7 @@ const WanderingMuseum = ({ onComplete }) => {
           {interactPrompt && (
             <div style={{
               position: 'absolute',
-              top: '58%',
+              top: '45%',
               left: '50%',
               transform: 'translateX(-50%)',
               color: 'rgba(255,255,200,0.9)',
