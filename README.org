@@ -4,6 +4,8 @@ assessment games.
 
 Live: https://ghollisjr.github.io/aboutyou/
 
+Audio files came from ~/Music/MyRecordings/tictachyon_personality/soundfx/export/
+
 ** Quick Start
 
 #+begin_src bash
