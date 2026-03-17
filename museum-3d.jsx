@@ -2199,8 +2199,9 @@ const WanderingMuseum = ({ onComplete }) => {
       gameStateRef.current.artPiecesExamined.add(artPiece.id);
       setExaminedCount(gameStateRef.current.artPiecesExamined.size);
 
-      if (am.initialized) {
-        const snd = activateSounds[Math.floor(Math.random() * activateSounds.length)];
+      if (am.initialized && !artPiece.isButton) {
+        const snd = activateSounds[activateSoundIdx];
+        activateSoundIdx = (activateSoundIdx + 1) % activateSounds.length;
         am.play(snd, { volume: 0.6 });
       }
 
@@ -2415,6 +2416,7 @@ const WanderingMuseum = ({ onComplete }) => {
       tripbass_loop: `${base}audio/tripbass_loop.mp3`,
     };
     const activateSounds = ['activate1', 'activate2', 'activate3', 'activate4'];
+    let activateSoundIdx = 0;
     let tripBassHandle = null;
     let tripBassLoopHandle = null;
     let tripBassPlaying = false;
