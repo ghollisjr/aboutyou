@@ -2199,7 +2199,10 @@ const WanderingMuseum = ({ onComplete }) => {
       gameStateRef.current.artPiecesExamined.add(artPiece.id);
       setExaminedCount(gameStateRef.current.artPiecesExamined.size);
 
-      if (am.initialized) am.play('examine');
+      if (am.initialized) {
+        const snd = activateSounds[Math.floor(Math.random() * activateSounds.length)];
+        am.play(snd, { volume: 0.6 });
+      }
 
       if (artPiece.isHidden) {
         gameStateRef.current.hiddenAreasFound.add(artPiece.id);
@@ -2211,12 +2214,10 @@ const WanderingMuseum = ({ onComplete }) => {
         setIsTripping(true);
         tripStartTime = performance.now();
 
-        // Crossfade: ambient down, trip music up
-        if (am.initialized) {
-          if (ambientHandle) am.setVolume(ambientHandle, 0.05, 0.3);
-          tripHandle = am.play('trip', { loop: true, volume: 0, fadeIn: 0 });
-          if (tripHandle) am.setVolume(tripHandle, 0.6, 0.3);
-        }
+        // Stop trip bass when button is pressed (trip starts)
+        if (tripBassHandle) { am.stop(tripBassHandle); tripBassHandle = null; }
+        if (tripBassLoopHandle) { am.stop(tripBassLoopHandle); tripBassLoopHandle = null; }
+        tripBassPlaying = false;
 
         // Random starting point from fixed list
         const tripStarts = [
@@ -2403,27 +2404,27 @@ const WanderingMuseum = ({ onComplete }) => {
     am.init();
     am.setMasterVolume(0.5);
 
+    const base = import.meta.env.BASE_URL;
     const audioManifest = {
-      footstep: '/aboutyou/audio/footstep.mp3',
-      examine:  '/aboutyou/audio/examine.mp3',
-      ambient:  '/aboutyou/audio/ambient.mp3',
-      bass:     '/aboutyou/audio/bass-sweep.mp3',
-      trip:     '/aboutyou/audio/trip-music.mp3',
-      portal:   '/aboutyou/audio/portal-charge.mp3',
+      footstep:      `${base}audio/footstep.mp3`,
+      activate1:     `${base}audio/activate1.mp3`,
+      activate2:     `${base}audio/activate2.mp3`,
+      activate3:     `${base}audio/activate3.mp3`,
+      activate4:     `${base}audio/activate4.mp3`,
+      tripbass:      `${base}audio/tripbass.mp3`,
+      tripbass_loop: `${base}audio/tripbass_loop.mp3`,
     };
-    let ambientHandle = null;
-    let bassHandle = null;
-    let tripHandle = null;
-    let portalChargeHandle = null;
-    let stepPhase = 0;
+    const activateSounds = ['activate1', 'activate2', 'activate3', 'activate4'];
+    let tripBassHandle = null;
+    let tripBassLoopHandle = null;
+    let tripBassPlaying = false;
+    let lastFootstepTime = 0;
     let prevCamX = 0;
     let prevCamZ = 0;
     let audioLoaded = false;
 
     am.loadAll(audioManifest).then(() => {
       audioLoaded = true;
-      ambientHandle = am.play('ambient', { loop: true, volume: 0.3, fadeIn: 2 });
-      bassHandle = am.play('bass', { loop: true, volume: 0 });
       prevCamX = camera.position.x;
       prevCamZ = camera.position.z;
     });
@@ -2991,31 +2992,33 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Audio per-frame updates
       if (am.initialized && audioLoaded) {
-        // Footsteps: accumulate step phase from camera position delta
+        // Footsteps: play twice per second while moving
         const dx = camera.position.x - prevCamX;
         const dz = camera.position.z - prevCamZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
         prevCamX = camera.position.x;
         prevCamZ = camera.position.z;
-        stepPhase += dist;
-        if (stepPhase >= 2.5) {
-          stepPhase -= 2.5;
+
+        if (dist > 0.001 && currentTime - lastFootstepTime >= 500) {
           am.play('footstep', { volume: 0.4 });
+          lastFootstepTime = currentTime;
         }
 
-        // Bass sweep: volume tracks button hover vignette
-        if (bassHandle) {
-          am.setVolume(bassHandle, buttonVignetteRef.current * 0.5);
-        }
-
-        // Portal charge: start/stop based on alignment
-        if (trippingRef.current) {
-          if (wasAlignedRef.current && !portalChargeHandle) {
-            portalChargeHandle = am.play('portal', { volume: 0.7 });
-          } else if (!wasAlignedRef.current && portalChargeHandle) {
-            am.stop(portalChargeHandle, { fadeOut: 0.3 });
-            portalChargeHandle = null;
-          }
+        // Trip bass: play when in range of trip button, stop when out of range
+        const buttonInRange = hoveredPiece && hoveredPiece.isButton && !hoveredPiece.examined;
+        if (buttonInRange && !tripBassPlaying) {
+          tripBassPlaying = true;
+          tripBassHandle = am.play('tripbass', { volume: 0.6, onended: () => {
+            // When tripbass finishes, loop tripbass_loop if still in range
+            tripBassHandle = null;
+            if (tripBassPlaying) {
+              tripBassLoopHandle = am.play('tripbass_loop', { loop: true, volume: 0.6 });
+            }
+          }});
+        } else if (!buttonInRange && tripBassPlaying) {
+          tripBassPlaying = false;
+          if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
+          if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
         }
       }
 
