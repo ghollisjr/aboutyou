@@ -2227,6 +2227,8 @@ const WanderingMuseum = ({ onComplete }) => {
         ];
         const start = tripStarts[Math.floor(Math.random() * tripStarts.length)];
         camera.position.set(...start.pos);
+        prevCamX = camera.position.x;
+        prevCamZ = camera.position.z;
         yaw = start.yaw;
         pitch = start.pitch;
 
@@ -3058,7 +3060,7 @@ const WanderingMuseum = ({ onComplete }) => {
         prevCamX = camera.position.x;
         prevCamZ = camera.position.z;
 
-        if (dist > 0.001 && currentTime - lastFootstepTime >= 500) {
+        if (dist > 0.001 && currentTime - lastFootstepTime >= 500 && !trippingRef.current) {
           am.play('footstep', { volume: 0.4 });
           lastFootstepTime = currentTime;
         }
