@@ -2431,6 +2431,17 @@ const WanderingMuseum = ({ onComplete }) => {
       prevCamZ = camera.position.z;
     });
 
+    // "Trip balls" button cinematic lock state
+    let buttonCinematicActive = false;
+    let buttonCinematicDone = false;
+    let buttonCinematicStart = 0;
+    let buttonCinematicTargetYaw = 0;
+    let buttonCinematicTargetPitch = 0;
+    let buttonCinematicStartX = 0;
+    let buttonCinematicStartZ = 0;
+    let buttonCinematicButtonX = 0;
+    let buttonCinematicButtonZ = 0;
+
     // Game loop — fixed simulation timestep for smooth movement
     const FIXED_DT = 1 / 60;
     let lastHoverTarget = null;
@@ -2503,6 +2514,7 @@ const WanderingMuseum = ({ onComplete }) => {
       const moveSpeed = baseMoveSpeed;
       const lookSpeed = baseLookSpeed;
 
+      if (!buttonCinematicActive)
       for (let _simStep = 0; _simStep < simSteps; _simStep++) {
       // Process gamepad input
       if (gamepadIndex !== null) {
@@ -2738,6 +2750,26 @@ const WanderingMuseum = ({ onComplete }) => {
       // Visual delta for animations outside the sim loop (adapts to actual display refresh rate)
       const vizDelta = Math.min(rawDelta, 0.1);
 
+      // Button cinematic: smoothly lerp camera to look at button and slide closer
+      if (buttonCinematicActive) {
+        yaw += (buttonCinematicTargetYaw - yaw) * 3 * vizDelta;
+        pitch += (buttonCinematicTargetPitch - pitch) * 3 * vizDelta;
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+        // Slowly slide camera toward button (30% of the way over the cinematic duration)
+        const t = Math.min((currentTime - buttonCinematicStart) / 3000, 1);
+        const slide = t * 0.3;
+        camera.position.x = buttonCinematicStartX + (buttonCinematicButtonX - buttonCinematicStartX) * slide;
+        camera.position.z = buttonCinematicStartZ + (buttonCinematicButtonZ - buttonCinematicStartZ) * slide;
+        orthoCamera.position.copy(camera.position);
+        orthoCamera.rotation.copy(camera.rotation);
+        if (currentTime - buttonCinematicStart >= 3000) {
+          buttonCinematicActive = false;
+          buttonCinematicDone = true;
+        }
+      }
+
       // Track path
       if (gameStateRef.current.pathTaken.length === 0 || 
           currentTime - gameStateRef.current.pathTaken[gameStateRef.current.pathTaken.length - 1].time > 500) {
@@ -2750,7 +2782,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Hover feedback: oscillation for art pieces, vignette for trip button
       // Throttle raycasting on mobile (every 3rd frame)
-      if (!mobile || (fpsData.frames % 3 === 0)) {
+      // Skip raycast updates during button cinematic to preserve hover state
+      if (!buttonCinematicActive && (!mobile || (fpsData.frames % 3 === 0))) {
         lastHoverTarget = trippingRef.current ? null : findTargetPiece();
       }
       const hoverTarget = lastHoverTarget;
@@ -2771,6 +2804,25 @@ const WanderingMuseum = ({ onComplete }) => {
           setInteractPrompt({ name: '', inputHint });
         }
         if (hoveredPiece.isButton) {
+          // Trigger cinematic lock on first approach
+          if (!buttonCinematicDone && !buttonCinematicActive) {
+            buttonCinematicActive = true;
+            buttonCinematicStart = currentTime;
+            // Capture target based on button's current apparent position
+            const bm = hoveredPiece.buttonMesh || hoveredPiece.mesh;
+            const bwp = new THREE.Vector3();
+            bm.getWorldPosition(bwp);
+            const dx = bwp.x - camera.position.x;
+            const dy = bwp.y - camera.position.y;
+            const dz = bwp.z - camera.position.z;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            buttonCinematicTargetYaw = Math.atan2(-dx, -dz);
+            buttonCinematicTargetPitch = Math.asin(dy / dist);
+            buttonCinematicStartX = camera.position.x;
+            buttonCinematicStartZ = camera.position.z;
+            buttonCinematicButtonX = bwp.x;
+            buttonCinematicButtonZ = bwp.z;
+          }
           // Gradually ramp up vignette and button brightness
           buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + vizDelta * 0.4);
           setButtonVignette(buttonVignetteRef.current);
@@ -2995,6 +3047,11 @@ const WanderingMuseum = ({ onComplete }) => {
       // Audio per-frame updates
       if (am.initialized && audioLoaded) {
         // Footsteps: play twice per second while moving
+        // During cinematic, keep prev position in sync to suppress footsteps
+        if (buttonCinematicActive) {
+          prevCamX = camera.position.x;
+          prevCamZ = camera.position.z;
+        }
         const dx = camera.position.x - prevCamX;
         const dz = camera.position.z - prevCamZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
