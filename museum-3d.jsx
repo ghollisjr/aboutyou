@@ -2215,6 +2215,10 @@ const WanderingMuseum = ({ onComplete }) => {
         setIsTripping(true);
         tripStartTime = performance.now();
 
+        // End button cinematic if still active
+        buttonCinematicActive = false;
+        buttonCinematicDone = true;
+
         // Stop trip bass when button is pressed (trip starts)
         if (tripBassHandle) { am.stop(tripBassHandle); tripBassHandle = null; }
         if (tripBassLoopHandle) { am.stop(tripBassLoopHandle); tripBassLoopHandle = null; }
@@ -2556,8 +2560,8 @@ const WanderingMuseum = ({ onComplete }) => {
           // Apply movement from left stick
           if (leftStickX !== 0 || leftStickY !== 0) {
             if (trippingRef.current) {
-              // Trip mode: only X-axis movement from left stick horizontal
-              const gpMoveX = leftStickX * moveSpeed;
+              // Trip mode: both stick axes move along world X
+              const gpMoveX = (leftStickX - leftStickY) * moveSpeed;
               const newX = camera.position.x + gpMoveX;
               if (!checkCollision(newX, camera.position.z)) {
                 camera.position.x = newX;
@@ -2640,16 +2644,18 @@ const WanderingMuseum = ({ onComplete }) => {
           moveX += moveSpeed;
         }
 
-        // Mobile joystick: only horizontal component moves along X
+        // Mobile joystick: both axes move along world X
         const joystickRadius = 50;
         const deadZone = 5;
         if (moveTouch.id !== null) {
           const dx = moveTouch.currentX - moveTouch.startX;
-          const dist = Math.abs(dx);
+          const dy = moveTouch.currentY - moveTouch.startY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist > deadZone) {
             const clamped = Math.min(dist, joystickRadius);
-            const nx = Math.sign(dx) * clamped / joystickRadius;
-            moveX += nx * moveSpeed;
+            const nx = (dx / dist) * clamped / joystickRadius;
+            const ny = (dy / dist) * clamped / joystickRadius;
+            moveX += (nx - ny) * moveSpeed;
           }
         }
 
