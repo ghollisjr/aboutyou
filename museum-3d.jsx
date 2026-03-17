@@ -2220,8 +2220,8 @@ const WanderingMuseum = ({ onComplete }) => {
         buttonCinematicDone = true;
 
         // Stop trip bass when button is pressed (trip starts)
-        if (tripBassHandle) { am.stop(tripBassHandle); tripBassHandle = null; }
-        if (tripBassLoopHandle) { am.stop(tripBassLoopHandle); tripBassLoopHandle = null; }
+        if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
+        if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
         tripBassPlaying = false;
 
         // Random starting point from fixed list
