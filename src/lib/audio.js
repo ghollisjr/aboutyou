@@ -36,7 +36,7 @@ export class AudioManager {
     await Promise.all(entries.map(([name, url]) => this.load(name, url)));
   }
 
-  play(name, { volume = 1, loop = false, fadeIn = 0 } = {}) {
+  play(name, { volume = 1, loop = false, fadeIn = 0, onended = null } = {}) {
     if (!this.ctx || !this.buffers.has(name)) return null;
 
     const source = this.ctx.createBufferSource();
@@ -60,6 +60,7 @@ export class AudioManager {
 
     source.onended = () => {
       this.playing.delete(handle);
+      if (onended) onended(handle);
     };
 
     source.start(0);
