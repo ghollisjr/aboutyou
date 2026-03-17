@@ -2732,6 +2732,9 @@ const WanderingMuseum = ({ onComplete }) => {
 
       } // end fixed-timestep simulation loop
 
+      // Visual delta for animations outside the sim loop (adapts to actual display refresh rate)
+      const vizDelta = Math.min(rawDelta, 0.1);
+
       // Track path
       if (gameStateRef.current.pathTaken.length === 0 || 
           currentTime - gameStateRef.current.pathTaken[gameStateRef.current.pathTaken.length - 1].time > 500) {
@@ -2766,14 +2769,14 @@ const WanderingMuseum = ({ onComplete }) => {
         }
         if (hoveredPiece.isButton) {
           // Gradually ramp up vignette and button brightness
-          buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + deltaTime * 0.4);
+          buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + vizDelta * 0.4);
           setButtonVignette(buttonVignetteRef.current);
           if (hoveredPiece.buttonMesh) {
             hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 2.5;
           }
         } else {
           // Ramp oscillation amplitude up smoothly
-          hoveredPiece._oscAmplitude = Math.min(0.1, hoveredPiece._oscAmplitude + deltaTime * 0.2);
+          hoveredPiece._oscAmplitude = Math.min(0.1, hoveredPiece._oscAmplitude + vizDelta * 0.2);
         }
       } else {
         if (hoveredPiece && !hoveredPiece.isButton) {
@@ -2797,7 +2800,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
         // Ramp down amplitude for non-hovered pieces
         if (piece !== hoveredPiece && piece._oscAmplitude > 0) {
-          piece._oscAmplitude = Math.max(0, piece._oscAmplitude - deltaTime * 0.3);
+          piece._oscAmplitude = Math.max(0, piece._oscAmplitude - vizDelta * 0.3);
         }
 
         if (piece._oscAmplitude > 0.001) {
@@ -2812,7 +2815,7 @@ const WanderingMuseum = ({ onComplete }) => {
       // Fade vignette down when not hovering button
       if (!hoveredPiece || !hoveredPiece.isButton) {
         if (buttonVignetteRef.current > 0) {
-          buttonVignetteRef.current = Math.max(0, buttonVignetteRef.current - deltaTime * 0.8);
+          buttonVignetteRef.current = Math.max(0, buttonVignetteRef.current - vizDelta * 0.8);
           setButtonVignette(buttonVignetteRef.current);
         }
       }
@@ -2821,7 +2824,7 @@ const WanderingMuseum = ({ onComplete }) => {
       artPieces.forEach(piece => {
         if (piece.examined && piece.rotatable) {
           const target = piece.artMesh || piece.mesh;
-          const rotAmount = 0.01; // fixed per frame at ~60fps
+          const rotAmount = 0.6 * vizDelta; // ~0.01 at 60fps, scales with actual framerate
           target.rotation.y += rotAmount;
           gameStateRef.current.rotationsPerformed += rotAmount;
         }
@@ -2833,7 +2836,7 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Animate button pulse
-      buttonPulseTime += deltaTime * 2;
+      buttonPulseTime += vizDelta * 2;
       button.position.y = 1.13 + Math.sin(buttonPulseTime) * 0.02;
       buttonMaterial.emissiveIntensity = 0.5 + Math.sin(buttonPulseTime * 2) * 0.3;
 
@@ -2870,7 +2873,7 @@ const WanderingMuseum = ({ onComplete }) => {
         });
 
         // Update trip shader ring uniforms
-        tripShaderMaterial.uniforms.ringOpacity.value = Math.min(0.8, tripShaderMaterial.uniforms.ringOpacity.value + deltaTime * 2);
+        tripShaderMaterial.uniforms.ringOpacity.value = Math.min(0.8, tripShaderMaterial.uniforms.ringOpacity.value + vizDelta * 2);
         tripShaderMaterial.uniforms.camPos.value.copy(camera.position);
         camera.updateMatrixWorld(true);
         const camRotInv = new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse);
@@ -2913,7 +2916,7 @@ const WanderingMuseum = ({ onComplete }) => {
         }
         
         if (aligned) {
-          alignmentTimeRef.current += deltaTime * 1000;
+          alignmentTimeRef.current += vizDelta * 1000;
           const progress = Math.min(100, (alignmentTimeRef.current / alignmentRequired) * 100);
           setAlignmentProgress(progress);
           
@@ -2937,7 +2940,7 @@ const WanderingMuseum = ({ onComplete }) => {
           setAlignmentProgress(0);
           tripShaderMaterial.uniforms.ringAligned.value = 0.0;
           // Fade portal overlay out when not aligned
-          portalOverlayMaterial.uniforms.intensity.value = Math.max(0, portalOverlayMaterial.uniforms.intensity.value - deltaTime * 2);
+          portalOverlayMaterial.uniforms.intensity.value = Math.max(0, portalOverlayMaterial.uniforms.intensity.value - vizDelta * 2);
           if (portalOverlayMaterial.uniforms.intensity.value <= 0) {
             portalOverlayQuad.visible = false;
           }
@@ -2969,7 +2972,7 @@ const WanderingMuseum = ({ onComplete }) => {
         });
         
         // Hide exit zone
-        exitZoneMaterial.opacity = Math.max(0, exitZoneMaterial.opacity - deltaTime * 2);
+        exitZoneMaterial.opacity = Math.max(0, exitZoneMaterial.opacity - vizDelta * 2);
         
         // Hide circles when not tripping
         alignmentCircles.forEach(circle => {
@@ -3021,14 +3024,14 @@ const WanderingMuseum = ({ onComplete }) => {
         // Use elapsed time since trip started (in seconds)
         const elapsedSeconds = (currentTime - tripStartTime) / 1000;
         tripShaderMaterial.uniforms.time.value = elapsedSeconds;
-        tripShaderMaterial.uniforms.intensity.value = Math.min(1, tripShaderMaterial.uniforms.intensity.value + deltaTime * 0.5);
+        tripShaderMaterial.uniforms.intensity.value = Math.min(1, tripShaderMaterial.uniforms.intensity.value + vizDelta * 0.5);
         
         // Debug: log time value occasionally
         if (currentTime % 2000 < 16) {
           console.log('Shader time:', elapsedSeconds.toFixed(3), 'intensity:', tripShaderMaterial.uniforms.intensity.value.toFixed(3));
         }
       } else {
-        tripShaderMaterial.uniforms.intensity.value = Math.max(0, tripShaderMaterial.uniforms.intensity.value - deltaTime * 2);
+        tripShaderMaterial.uniforms.intensity.value = Math.max(0, tripShaderMaterial.uniforms.intensity.value - vizDelta * 2);
       }
 
       // Render with or without post-processing
