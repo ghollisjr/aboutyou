@@ -3489,6 +3489,7 @@ const WanderingMuseum = ({ onComplete }) => {
           const data = warpPendingTripData;
           warpPendingTripData = null;
 
+          trippingRef.current = true;
           setIsTripping(true);
           tripStartTime = performance.now();
 
