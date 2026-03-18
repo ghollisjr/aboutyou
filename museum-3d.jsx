@@ -2153,12 +2153,12 @@ const WanderingMuseum = ({ onComplete }) => {
         // Pointer lock mode (event-driven, use base rate)
         yaw -= e.movementX * baseLookSpeed;
         pitch -= e.movementY * baseLookSpeed;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        if (!trippingRef.current) pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
       } else if (mouse.isDragging) {
         // Fallback mode (click and drag)
         yaw -= e.movementX * baseLookSpeed;
         pitch -= e.movementY * baseLookSpeed;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        if (!trippingRef.current) pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
       }
     };
 
@@ -2717,7 +2717,7 @@ const WanderingMuseum = ({ onComplete }) => {
             yaw -= rightStickX * 0.05;
             // Y-axis: negative by default (not inverted), unless invertY is true
             pitch += (invertYRef.current ? rightStickY : -rightStickY) * 0.05;
-            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+            if (!trippingRef.current) pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
           }
           
           // A button (button 0) - interact with art or floating objects
@@ -2842,7 +2842,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
           yaw -= nx * lookSpeed * 15;
           pitch -= ny * lookSpeed * 15;
-          pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+          if (!trippingRef.current) pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
         }
       }
 
