@@ -2041,6 +2041,13 @@ const WanderingMuseum = ({ onComplete }) => {
     // Trip start time for shader animation
     let tripStartTime = 0;
 
+    // Floating math objects during trip
+    let floatingObjects = [];
+    let _floatingHitBoxArray = [];
+    const floatingHitBoxMap = new Map();
+    const floatingScene = new THREE.Scene();
+    floatingScene.add(new THREE.AmbientLight(0xffffff, 1.5));
+
     // Controls state
     const keys = {};
     const mouse = { x: 0, y: 0, isDragging: false };
@@ -2191,6 +2198,19 @@ const WanderingMuseum = ({ onComplete }) => {
       return null;
     };
 
+    const findFloatingTarget = () => {
+      if (_floatingHitBoxArray.length === 0) return null;
+      _raycaster.setFromCamera(_screenCenter, camera);
+      _raycaster.far = 20;
+      const intersects = _raycaster.intersectObjects(_floatingHitBoxArray, false);
+      if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        const floater = floatingHitBoxMap.get(hit);
+        return (floater && !floater.examined) ? floater : null;
+      }
+      return null;
+    };
+
     // Shared activation logic
     const activatePiece = (artPiece) => {
       if (!artPiece || artPiece.examined) return;
@@ -2240,6 +2260,67 @@ const WanderingMuseum = ({ onComplete }) => {
           artPiece.buttonMesh.position.y = 1.08;
           setTimeout(() => { artPiece.buttonMesh.position.y = 1.13; }, 200);
         }
+
+        // Spawn floating clones of unexamined art pieces
+        floatingObjects = [];
+        _floatingHitBoxArray = [];
+        floatingHitBoxMap.clear();
+        artPieces.forEach(piece => {
+          if (piece.isButton || piece.isTripExit || piece.examined || !piece.artMesh) return;
+          const clone = piece.artMesh.clone();
+          // Deep-clone materials so effects don't affect originals
+          // Add emissive glow so objects are visible through the trip shader
+          clone.traverse(obj => {
+            if (obj.material) {
+              obj.material = obj.material.clone();
+              if (obj.material.emissive) {
+                obj.material.emissiveIntensity = 1.5;
+              }
+            }
+          });
+          const scale = 0.4 + Math.random() * 0.2;
+          clone.scale.multiplyScalar(scale);
+          clone.position.set(
+            (Math.random() - 0.5) * 34,
+            0.5 + Math.random() * 3.5,
+            (Math.random() - 0.5) * 34
+          );
+          floatingScene.add(clone);
+
+          // Create invisible hit box sphere
+          const bbox = new THREE.Box3().setFromObject(clone);
+          const size = new THREE.Vector3();
+          bbox.getSize(size);
+          const radius = Math.max(size.x, size.y, size.z) * 0.5;
+          const hitBox = new THREE.Mesh(
+            new THREE.SphereGeometry(radius, 8, 6),
+            new THREE.MeshBasicMaterial({ visible: false })
+          );
+          hitBox.position.copy(clone.position);
+          hitBox.layers.set(1);
+          scene.add(hitBox);
+
+          const entry = {
+            mesh: clone,
+            hitBox,
+            source: piece,
+            examined: false,
+            fadeStartTime: 0,
+            velocity: new THREE.Vector3(
+              (Math.random() - 0.5) * 0.8,
+              (Math.random() - 0.5) * 0.4,
+              (Math.random() - 0.5) * 0.8
+            ),
+            angularVelocity: new THREE.Vector3(
+              (Math.random() - 0.5) * 1.6,
+              (Math.random() - 0.5) * 1.6,
+              (Math.random() - 0.5) * 1.6
+            )
+          };
+          floatingObjects.push(entry);
+          _floatingHitBoxArray.push(hitBox);
+          floatingHitBoxMap.set(hitBox, entry);
+        });
       }
 
       // Visual feedback - pulse emissive (traverse to handle Groups and line materials)
@@ -2283,12 +2364,52 @@ const WanderingMuseum = ({ onComplete }) => {
       }
     };
 
+    const activateFloatingPiece = (floater) => {
+      if (!floater || floater.examined) return;
+      floater.examined = true;
+      floater.fadeStartTime = performance.now();
+
+      // Mark source piece as examined
+      floater.source.examined = true;
+      gameStateRef.current.artPiecesExamined.add(floater.source.id);
+      setExaminedCount(gameStateRef.current.artPiecesExamined.size);
+      gameStateRef.current.timeSpentPerPiece[floater.source.id] = Date.now();
+
+      // Play activation sound
+      if (am.initialized) {
+        const snd = activateSounds[activateSoundIdx];
+        activateSoundIdx = (activateSoundIdx + 1) % activateSounds.length;
+        am.play(snd, { volume: 0.6 });
+      }
+
+      // Set materials to bright white emissive, make transparent
+      floater.mesh.traverse(obj => {
+        if (!obj.material) return;
+        obj.material.transparent = true;
+        obj.material.depthWrite = false;
+        if (obj.material.emissive) {
+          obj.material.emissive.set(0xffffff);
+          obj.material.emissiveIntensity = 3.0;
+        } else if (obj.material.color) {
+          obj.material.color.set(0xffffff);
+        }
+      });
+
+      // Freeze velocity, capture base scale
+      floater.velocity.set(0, 0, 0);
+      floater._baseScale = floater.mesh.scale.clone();
+    };
+
     // Hover glow tracking
     let hoveredPiece = null;
     let hoveredOriginalEmissive = null;
 
     const onClick = (e) => {
-      if (trippingRef.current) return;
+      if (trippingRef.current) {
+        const floater = findFloatingTarget();
+        if (floater) activateFloatingPiece(floater);
+        return;
+      }
       if (!mobile && pointerLockSupported && !pointerLocked) return;
       if (skipNextClick) { skipNextClick = false; return; }
 
@@ -2598,11 +2719,16 @@ const WanderingMuseum = ({ onComplete }) => {
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
           }
           
-          // A button (button 0) - interact with art (disabled during trip)
+          // A button (button 0) - interact with art or floating objects
           const aPressed = gamepad.buttons[0]?.pressed;
-          if (aPressed && !gamepadAWasPressed && !trippingRef.current) {
-            const target = findTargetPiece();
-            if (target) activatePiece(target);
+          if (aPressed && !gamepadAWasPressed) {
+            if (trippingRef.current) {
+              const floater = findFloatingTarget();
+              if (floater) activateFloatingPiece(floater);
+            } else {
+              const target = findTargetPiece();
+              if (target) activatePiece(target);
+            }
           }
           gamepadAWasPressed = aPressed;
         }
@@ -2794,6 +2920,18 @@ const WanderingMuseum = ({ onComplete }) => {
       if (!buttonCinematicActive && (!mobile || (fpsData.frames % 3 === 0))) {
         lastHoverTarget = trippingRef.current ? null : findTargetPiece();
       }
+      // Floating object hover during trip
+      if (trippingRef.current && (!mobile || (fpsData.frames % 3 === 0))) {
+        const floater = findFloatingTarget();
+        if (floater) {
+          const action = 'to examine';
+          const inputHint = gamepadIndex !== null ? `press A ${action}` : mobile ? `touch ${action}` : `click ${action}`;
+          setInteractPrompt({ name: '', inputHint });
+        } else {
+          // Only clear prompt if we were showing one for a floating object
+          if (!lastHoverTarget) setInteractPrompt(null);
+        }
+      }
       const hoverTarget = lastHoverTarget;
       if (hoverTarget && !hoverTarget.examined && !hoverTarget.isTripExit) {
         if (hoveredPiece !== hoverTarget) {
@@ -2927,9 +3065,72 @@ const WanderingMuseum = ({ onComplete }) => {
           }
         });
         
+        // Animate floating math objects
+        for (let i = floatingObjects.length - 1; i >= 0; i--) {
+          const f = floatingObjects[i];
+          if (f.examined) {
+            // Dissolve effect
+            const elapsed = (performance.now() - f.fadeStartTime) / 1000;
+            const fadeDuration = 1.5;
+            const fadeProgress = Math.min(1.0, elapsed / fadeDuration);
+
+            if (fadeProgress < 0.3) {
+              // First 30%: pulse scale up, ramp emissive
+              const t = fadeProgress / 0.3;
+              const scaleMult = 1.0 + 0.4 * t;
+              f.mesh.scale.copy(f._baseScale).multiplyScalar(scaleMult);
+              f.mesh.traverse(obj => {
+                if (obj.material && obj.material.emissive) {
+                  obj.material.emissiveIntensity = 3.0 + 7.0 * t;
+                }
+              });
+            } else {
+              // Remaining 70%: shrink to 0, fade opacity
+              const t = (fadeProgress - 0.3) / 0.7;
+              const shrink = 1.0 - t;
+              f.mesh.scale.copy(f._baseScale).multiplyScalar(1.4 * shrink);
+              f.mesh.traverse(obj => {
+                if (obj.material) {
+                  if (obj.material.emissive) obj.material.emissiveIntensity = 10.0 * (1.0 - t);
+                  obj.material.opacity = 1.0 - t;
+                }
+              });
+            }
+            // Spin faster during dissolve
+            f.mesh.rotation.x += 4.0 * vizDelta;
+            f.mesh.rotation.y += 6.0 * vizDelta;
+
+            if (fadeProgress >= 1.0) {
+              floatingScene.remove(f.mesh);
+              scene.remove(f.hitBox);
+              floatingHitBoxMap.delete(f.hitBox);
+              const hbIdx = _floatingHitBoxArray.indexOf(f.hitBox);
+              if (hbIdx !== -1) _floatingHitBoxArray.splice(hbIdx, 1);
+              floatingObjects.splice(i, 1);
+            }
+          } else {
+            // Normal floating motion
+            f.mesh.position.addScaledVector(f.velocity, vizDelta);
+            f.mesh.rotation.x += f.angularVelocity.x * vizDelta;
+            f.mesh.rotation.y += f.angularVelocity.y * vizDelta;
+            f.mesh.rotation.z += f.angularVelocity.z * vizDelta;
+
+            // Bounce off boundaries
+            if (f.mesh.position.x > 18) { f.mesh.position.x = 18; f.velocity.x *= -1; }
+            if (f.mesh.position.x < -18) { f.mesh.position.x = -18; f.velocity.x *= -1; }
+            if (f.mesh.position.z > 18) { f.mesh.position.z = 18; f.velocity.z *= -1; }
+            if (f.mesh.position.z < -18) { f.mesh.position.z = -18; f.velocity.z *= -1; }
+            if (f.mesh.position.y > 4.5) { f.mesh.position.y = 4.5; f.velocity.y *= -1; }
+            if (f.mesh.position.y < 0.3) { f.mesh.position.y = 0.3; f.velocity.y *= -1; }
+
+            // Sync hitbox
+            f.hitBox.position.copy(f.mesh.position);
+          }
+        }
+
         // Show exit zone (DISABLED FOR TESTING)
         // exitZoneMaterial.opacity = Math.min(0.3, exitZoneMaterial.opacity + deltaTime * 2);
-        
+
         // Hide 3D ring meshes — rings are drawn by the trip shader via cylindrical projection
         alignmentCircles.forEach(circle => {
           circle.mesh.visible = false;
@@ -3033,7 +3234,16 @@ const WanderingMuseum = ({ onComplete }) => {
             piece.mesh.visible = true;
           }
         });
-        
+
+        // Clean up floating objects
+        floatingObjects.forEach(f => {
+          floatingScene.remove(f.mesh);
+          scene.remove(f.hitBox);
+        });
+        floatingObjects = [];
+        _floatingHitBoxArray = [];
+        floatingHitBoxMap.clear();
+
         // Hide exit zone
         exitZoneMaterial.opacity = Math.max(0, exitZoneMaterial.opacity - vizDelta * 2);
         
@@ -3114,6 +3324,15 @@ const WanderingMuseum = ({ onComplete }) => {
         tripShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
         renderer.setRenderTarget(null);
         renderer.render(tripScene, tripCamera);
+
+        // Render floating objects on top of trip shader (separate scene)
+        // Clear only depth buffer so floating objects aren't occluded by the fullscreen quad
+        if (floatingObjects.length > 0) {
+          renderer.autoClear = false;
+          renderer.clearDepth();
+          renderer.render(floatingScene, activeCamera);
+          renderer.autoClear = true;
+        }
 
         // Portal glow overlay (additive, on top of trip effect)
         if (portalOverlayQuad.visible) {
