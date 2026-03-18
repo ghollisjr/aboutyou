@@ -2013,7 +2013,10 @@ const WanderingMuseum = ({ onComplete }) => {
     };
 
     // Finish game function - defined early so it's accessible from event handlers
+    let gameFinished = false;
     const finishGame = (allowAudioFinish) => {
+      if (gameFinished) return;
+      gameFinished = true;
       if (allowAudioFinish) {
         // Let current sounds finish naturally, then stop any remaining
         setTimeout(() => am.stopAll(), 3000);
@@ -2327,7 +2330,9 @@ const WanderingMuseum = ({ onComplete }) => {
             if (obj.material) {
               obj.material = obj.material.clone();
               if (obj.material.emissive) {
-                obj.material.emissiveIntensity = 1.5;
+                // Bright white glow so objects stand out against trip background
+                obj.material.emissive.set(0xffffff);
+                obj.material.emissiveIntensity = 0.6;
               }
             }
           });
@@ -3812,11 +3817,11 @@ const WanderingMuseum = ({ onComplete }) => {
               bottom: '12%',
               left: '50%',
               transform: 'translateX(-50%)',
-              color: 'rgba(200,180,255,0.6)',
+              color: 'rgba(220,200,255,1)',
               fontSize: '14px',
               fontWeight: '300',
               letterSpacing: '2px',
-              textShadow: '0 0 10px rgba(150,100,255,0.4)',
+              textShadow: '0 0 10px rgba(150,100,255,0.8), 0 0 20px rgba(0,0,0,0.9)',
               fontFamily: 'system-ui, sans-serif',
               pointerEvents: 'none',
               textAlign: 'center'
@@ -3835,7 +3840,7 @@ const WanderingMuseum = ({ onComplete }) => {
               color: '#00ffff',
               fontSize: '48px',
               fontWeight: 'bold',
-              textShadow: '0 0 20px rgba(0,255,255,1), 0 0 40px rgba(0,255,255,0.8)',
+              textShadow: '0 0 20px rgba(0,255,255,1), 0 0 40px rgba(0,255,255,0.8), 0 0 4px rgba(0,0,0,1)',
               fontFamily: 'system-ui, sans-serif',
               pointerEvents: 'none'
             }}>
