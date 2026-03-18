@@ -3642,6 +3642,26 @@ const WanderingMuseum = ({ onComplete }) => {
             )}
           </div>
 
+          {/* Trip hint */}
+          {isTripping && !isAligned && (
+            <div style={{
+              position: 'absolute',
+              bottom: '12%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: 'rgba(200,180,255,0.6)',
+              fontSize: '14px',
+              fontWeight: '300',
+              letterSpacing: '2px',
+              textShadow: '0 0 10px rgba(150,100,255,0.4)',
+              fontFamily: 'system-ui, sans-serif',
+              pointerEvents: 'none',
+              textAlign: 'center'
+            }}>
+              find alignment and transcend finding
+            </div>
+          )}
+
           {/* Alignment text - centered and large */}
           {isTripping && isAligned && (
             <div style={{
