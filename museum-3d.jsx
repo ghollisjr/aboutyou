@@ -2020,6 +2020,8 @@ const WanderingMuseum = ({ onComplete }) => {
     const finishGame = (allowAudioFinish) => {
       if (gameFinished) return;
       gameFinished = true;
+      // Stop ambient loop timer so it doesn't restart after stopAll
+      stopAmbientMusic(0.05);
       if (allowAudioFinish) {
         // Let current sounds finish naturally, then stop any remaining
         setTimeout(() => am.stopAll(), 3000);
@@ -2386,9 +2388,21 @@ const WanderingMuseum = ({ onComplete }) => {
       setExaminedCount(gameStateRef.current.artPiecesExamined.size);
 
       if (am.initialized && !artPiece.isButton) {
-        const snd = activateSounds[activateSoundIdx];
-        activateSoundIdx = (activateSoundIdx + 1) % activateSounds.length;
-        am.play(snd, { volume: 0.6 });
+        let snd;
+        if (activateSoundIdx < activateSoundsEarly.length) {
+          snd = activateSoundsEarly[activateSoundIdx];
+          activateSoundIdx++;
+        } else {
+          snd = activateSoundsLate[Math.floor(Math.random() * activateSoundsLate.length)];
+        }
+        const handle = am.play(snd, { volume: 0.6 });
+        // Start ambient music after the 4th activation sound finishes
+        if (activateSoundIdx === activateSoundsEarly.length && !ambientPlaying && handle) {
+          const sndDur = am.getDuration(snd);
+          setTimeout(() => {
+            if (!ambientPlaying && !trippingRef.current) startAmbientLoop();
+          }, sndDur * 1000);
+        }
       }
 
       if (artPiece.isHidden) {
@@ -2403,10 +2417,11 @@ const WanderingMuseum = ({ onComplete }) => {
         buttonCinematicActive = false;
         buttonCinematicDone = true;
 
-        // Stop trip bass when button is pressed
+        // Stop trip bass and ambient music when button is pressed
         if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
         if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
         tripBassPlaying = false;
+        stopAmbientMusic(0.05);
 
         if (artPiece.buttonMesh) {
           artPiece.buttonMesh.position.y = 1.08;
@@ -2516,10 +2531,9 @@ const WanderingMuseum = ({ onComplete }) => {
       setExaminedCount(gameStateRef.current.artPiecesExamined.size);
       gameStateRef.current.timeSpentPerPiece[floater.source.id] = Date.now();
 
-      // Play activation sound
+      // Play activation sound — always use late sounds during trip
       if (am.initialized) {
-        const snd = activateSounds[activateSoundIdx];
-        activateSoundIdx = (activateSoundIdx + 1) % activateSounds.length;
+        const snd = activateSoundsLate[Math.floor(Math.random() * activateSoundsLate.length)];
         am.play(snd, { volume: 0.6 });
       }
 
@@ -2685,14 +2699,59 @@ const WanderingMuseum = ({ onComplete }) => {
       activate2:     `${base}audio/activate2.mp3`,
       activate3:     `${base}audio/activate3.mp3`,
       activate4:     `${base}audio/activate4.mp3`,
+      activate5:     `${base}audio/activate5.mp3`,
+      activate6:     `${base}audio/activate6.mp3`,
+      activate7:     `${base}audio/activate7.mp3`,
+      activate8:     `${base}audio/activate8.mp3`,
+      activate9:     `${base}audio/activate9.mp3`,
+      activate10:    `${base}audio/activate10.mp3`,
+      museum1:       `${base}audio/museum1.mp3`,
       tripbass:      `${base}audio/tripbass.mp3`,
       tripbass_loop: `${base}audio/tripbass_loop.mp3`,
     };
-    const activateSounds = ['activate1', 'activate2', 'activate3', 'activate4'];
+    const activateSoundsEarly = ['activate1', 'activate2', 'activate3', 'activate4'];
+    const activateSoundsLate = ['activate5', 'activate6', 'activate7', 'activate8', 'activate9', 'activate10'];
     let activateSoundIdx = 0;
     let tripBassHandle = null;
     let tripBassLoopHandle = null;
     let tripBassPlaying = false;
+
+    // Ambient music state
+    let ambientHandle = null;
+    let ambientPlaying = false;
+    let ambientLoopTimer = null;
+    const AMBIENT_LOOP_POINT = 56; // restart next copy at 56s (8s overlap with 1:04 track)
+    const AMBIENT_OVERLAP = 8;     // crossfade duration
+    const AMBIENT_VOLUME = 0.6;
+
+    let ambientFirstPlay = true;
+    const startAmbientLoop = () => {
+      if (ambientPlaying) return;
+      ambientPlaying = true;
+      const fadeIn = ambientFirstPlay ? 0 : 0.5;
+      ambientFirstPlay = false;
+      ambientHandle = am.play('museum1', { volume: AMBIENT_VOLUME, fadeIn });
+      scheduleAmbientLoop();
+    };
+
+    const scheduleAmbientLoop = () => {
+      if (ambientLoopTimer) clearTimeout(ambientLoopTimer);
+      ambientLoopTimer = setTimeout(() => {
+        if (!ambientPlaying) return;
+        // Start next copy while current still has 8s left
+        const prevHandle = ambientHandle;
+        ambientHandle = am.play('museum1', { volume: AMBIENT_VOLUME, fadeIn: AMBIENT_OVERLAP });
+        // Fade out the previous copy over the overlap
+        if (prevHandle) am.stop(prevHandle, { fadeOut: AMBIENT_OVERLAP });
+        scheduleAmbientLoop();
+      }, AMBIENT_LOOP_POINT * 1000);
+    };
+
+    const stopAmbientMusic = (fadeOut = 0.05) => {
+      ambientPlaying = false;
+      if (ambientLoopTimer) { clearTimeout(ambientLoopTimer); ambientLoopTimer = null; }
+      if (ambientHandle) { am.stop(ambientHandle, { fadeOut }); ambientHandle = null; }
+    };
     let lastFootstepTime = 0;
     let prevCamX = 0;
     let prevCamZ = 0;
@@ -3484,10 +3543,14 @@ const WanderingMuseum = ({ onComplete }) => {
               tripBassLoopHandle = am.play('tripbass_loop', { loop: true, volume: 0.6, fadeIn: crossfadeDur });
             }, (introDur - crossfadeDur) * 1000);
           }
+          // Fade ambient music down quickly
+          if (ambientHandle) am.setVolume(ambientHandle, 0, 0.3);
         } else if (!buttonInRange && tripBassPlaying) {
           tripBassPlaying = false;
           if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
           if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
+          // Fade ambient music back up
+          if (ambientHandle) am.setVolume(ambientHandle, AMBIENT_VOLUME, 0.3);
         }
       }
 
