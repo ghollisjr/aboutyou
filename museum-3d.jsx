@@ -1011,6 +1011,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Render target for post-processing
     const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+    const warpTripTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
     const tripScene = new THREE.Scene();
     const tripCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const tripQuad = new THREE.Mesh(
@@ -2103,6 +2104,130 @@ const WanderingMuseum = ({ onComplete }) => {
     const floatingScene = new THREE.Scene();
     floatingScene.add(new THREE.AmbientLight(0xffffff, 1.5));
 
+    // Hyperspace warp transition state
+    let warpActive = false;
+    let warpStartTime = 0;
+    const WARP_DURATION = 2.5; // seconds
+    let warpPendingTripData = null; // stores trip setup data during warp
+
+    // Warp shader — radial speed lines + color spiral + trip iris-in
+    const warpShaderMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        tTrip: { value: null },
+        progress: { value: 0 }, // 0–1 over warp duration
+        time: { value: 0 },
+        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tTrip;
+        uniform float progress;
+        uniform float time;
+        uniform vec2 resolution;
+        varying vec2 vUv;
+
+        #define PI 3.14159265
+
+        vec3 hueToRGB(float h) {
+          return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+        }
+
+        void main() {
+          vec2 center = vec2(0.5);
+          vec2 uv = vUv;
+          vec2 toCenter = uv - center;
+          float dist = length(toCenter);
+          float angle = atan(toCenter.y, toCenter.x);
+
+          // Phase 1 (0–0.45): radial zoom blur + speed lines
+          // Phase 2 (0.45–0.7): color spiral brightens then darkens
+          // Phase 3 (0.7–1.0): trip scene iris-opens from center
+
+          float zoomPhase = smoothstep(0.0, 0.45, progress);
+          float spiralPhase = smoothstep(0.3, 0.7, progress);
+          float spiralDark = smoothstep(0.55, 0.75, progress);
+          float irisPhase = smoothstep(0.7, 1.0, progress);
+
+          // --- Phase 1: Radial zoom blur ---
+          float zoomStrength = zoomPhase * 0.4;
+          vec2 zoomedUV = mix(uv, center, zoomStrength);
+
+          vec3 color = vec3(0.0);
+          for (int i = 0; i < 12; i++) {
+            float t = float(i) / 12.0;
+            float blurAmount = zoomPhase * 0.08 * t;
+            vec2 sampleUV = mix(zoomedUV, center, blurAmount);
+            color += texture2D(tDiffuse, sampleUV).rgb;
+          }
+          color /= 12.0;
+
+          // Speed lines
+          float lineAngle = angle * 40.0;
+          float line = pow(abs(sin(lineAngle)), 20.0);
+          float lineIntensity = zoomPhase * (0.5 + dist * 2.0);
+          vec3 lineColor = hueToRGB(fract(angle / (2.0 * PI) + time * 0.5));
+          color += line * lineIntensity * lineColor;
+
+          // Chromatic aberration
+          float aberration = zoomPhase * 0.015;
+          vec2 rUV = (zoomedUV - center) * (1.0 + aberration) + center;
+          vec2 bUV = (zoomedUV - center) * (1.0 - aberration) + center;
+          color.r = mix(color.r, texture2D(tDiffuse, rUV).r, zoomPhase * 0.5);
+          color.b = mix(color.b, texture2D(tDiffuse, bUV).b, zoomPhase * 0.5);
+
+          // Vignette
+          float vignette = 1.0 - dist * zoomPhase * 1.5;
+          color *= max(vignette, 0.0);
+          color *= 1.0 + zoomPhase * 2.0;
+
+          // --- Phase 2: Color spiral ---
+          // Rotating spiral arms with full-spectrum hue
+          float spiralArms = 5.0;
+          float spiralAngle = angle * spiralArms - dist * 12.0 + time * 8.0;
+          float spiral = sin(spiralAngle) * 0.5 + 0.5;
+          // Second layer for depth
+          float spiral2 = sin(angle * 3.0 + dist * 8.0 - time * 6.0) * 0.5 + 0.5;
+
+          vec3 spiralColor = hueToRGB(fract(angle / (2.0 * PI) + dist * 0.3 + time * 0.2));
+          vec3 spiralColor2 = hueToRGB(fract(-angle / (2.0 * PI) + dist * 0.5 - time * 0.15 + 0.5));
+          vec3 spiralMix = spiralColor * spiral + spiralColor2 * spiral2;
+
+          // Brightness: ramp up then down
+          float spiralBright = sin(smoothstep(0.3, 0.7, progress) * PI) * 2.0;
+          spiralMix *= spiralBright;
+
+          // Blend spiral over scene
+          color = mix(color, spiralMix, spiralPhase);
+
+          // Darken after peak
+          color *= mix(1.0, 0.02, spiralDark * (1.0 - irisPhase));
+
+          // --- Phase 3: Trip scene iris-in from center ---
+          if (irisPhase > 0.0) {
+            vec3 tripColor = texture2D(tTrip, uv).rgb;
+            // Expanding circle from center
+            float irisRadius = irisPhase * 1.2; // slightly > sqrt(2)/2 to cover corners
+            float irisMask = smoothstep(irisRadius, irisRadius - 0.15, dist);
+            color = mix(color, tripColor, irisMask);
+          }
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    });
+    const warpScene = new THREE.Scene();
+    const warpCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const warpQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), warpShaderMaterial);
+    warpScene.add(warpQuad);
+
     // Controls state
     const keys = {};
     const mouse = { x: 0, y: 0, isDragging: false };
@@ -2285,52 +2410,44 @@ const WanderingMuseum = ({ onComplete }) => {
         gameStateRef.current.hiddenAreasFound.add(artPiece.id);
       }
 
-      // Special handling for the trip button
+      // Special handling for the trip button — start hyperspace warp
       if (artPiece.isButton) {
         gameStateRef.current.trippedBalls = true;
-        setIsTripping(true);
-        tripStartTime = performance.now();
 
         // End button cinematic if still active
         buttonCinematicActive = false;
         buttonCinematicDone = true;
 
-        // Stop trip bass when button is pressed (trip starts)
+        // Stop trip bass when button is pressed
         if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
         if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
         tripBassPlaying = false;
-
-        // Random starting point from fixed list
-        const tripStarts = [
-          { pos: [7.10, 2, 0], yaw: 0.172, pitch: -0.547 },   // fwd: (0.146, 0.521, -0.841)
-          { pos: [19.00, 2, 0], yaw: -0.126, pitch: 0.647 },           // fwd: (-0.100, -0.606, -0.789)
-        ];
-        const start = tripStarts[Math.floor(Math.random() * tripStarts.length)];
-        camera.position.set(...start.pos);
-        prevCamX = camera.position.x;
-        prevCamZ = camera.position.z;
-        yaw = start.yaw;
-        pitch = start.pitch;
 
         if (artPiece.buttonMesh) {
           artPiece.buttonMesh.position.y = 1.08;
           setTimeout(() => { artPiece.buttonMesh.position.y = 1.13; }, 200);
         }
 
-        // Spawn floating clones of unexamined art pieces
-        floatingObjects = [];
-        _floatingHitBoxArray = [];
-        floatingHitBoxMap.clear();
+        // Start hyperspace warp — trip setup deferred until warp completes
+        warpActive = true;
+        warpStartTime = performance.now();
+
+        // Pre-compute trip data so it's ready when warp ends
+        const tripStarts = [
+          { pos: [7.10, 2, 0], yaw: 0.172, pitch: -0.547 },
+          { pos: [19.00, 2, 0], yaw: -0.126, pitch: 0.647 },
+        ];
+        const start = tripStarts[Math.floor(Math.random() * tripStarts.length)];
+
+        // Pre-spawn floating clones (hidden until trip starts)
+        const pendingFloaters = [];
         artPieces.forEach(piece => {
           if (piece.isButton || piece.isTripExit || piece.examined || !piece.artMesh) return;
           const clone = piece.artMesh.clone();
-          // Deep-clone materials so effects don't affect originals
-          // Add emissive glow so objects are visible through the trip shader
           clone.traverse(obj => {
             if (obj.material) {
               obj.material = obj.material.clone();
               if (obj.material.emissive) {
-                // Bright white glow so objects stand out against trip background
                 obj.material.emissive.set(0xffffff);
                 obj.material.emissiveIntensity = 0.6;
               }
@@ -2338,7 +2455,6 @@ const WanderingMuseum = ({ onComplete }) => {
           });
           const scale = 0.4 + Math.random() * 0.2;
           clone.scale.multiplyScalar(scale);
-          // Distribute on a sphere shell around player start position
           const sphereRadius = 10 + Math.random() * 8;
           const theta = Math.random() * Math.PI * 2;
           const phi = Math.acos(2 * Math.random() - 1);
@@ -2347,39 +2463,10 @@ const WanderingMuseum = ({ onComplete }) => {
             start.pos[1] + sphereRadius * Math.cos(phi),
             start.pos[2] + sphereRadius * Math.sin(phi) * Math.sin(theta)
           );
-          floatingScene.add(clone);
-
-          // Create invisible hit box sphere — fixed radius for reliable raycasting
-          const radius = 0.7;
-          const hitBox = new THREE.Mesh(
-            new THREE.SphereGeometry(radius, 8, 6),
-            new THREE.MeshBasicMaterial({ visible: false })
-          );
-          hitBox.position.copy(clone.position);
-          hitBox.layers.set(1);
-          scene.add(hitBox);
-
-          const entry = {
-            mesh: clone,
-            hitBox,
-            source: piece,
-            examined: false,
-            fadeStartTime: 0,
-            velocity: new THREE.Vector3(
-              (Math.random() - 0.5) * 0.8,
-              (Math.random() - 0.5) * 0.4,
-              (Math.random() - 0.5) * 0.8
-            ),
-            angularVelocity: new THREE.Vector3(
-              (Math.random() - 0.5) * 1.6,
-              (Math.random() - 0.5) * 1.6,
-              (Math.random() - 0.5) * 1.6
-            )
-          };
-          floatingObjects.push(entry);
-          _floatingHitBoxArray.push(hitBox);
-          floatingHitBoxMap.set(hitBox, entry);
+          pendingFloaters.push({ clone, piece });
         });
+
+        warpPendingTripData = { start, pendingFloaters };
       }
 
       // Visual feedback - pulse emissive (traverse to handle Groups and line materials)
@@ -2580,9 +2667,11 @@ const WanderingMuseum = ({ onComplete }) => {
       renderer.setSize(window.innerWidth, window.innerHeight);
       bloomComposer.setSize(window.innerWidth, window.innerHeight);
       tripBloomComposer.setSize(window.innerWidth, window.innerHeight);
+      warpTripTarget.setSize(window.innerWidth, window.innerHeight);
       _resolution.set(window.innerWidth, window.innerHeight);
       portalOverlayMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
       tripShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+      warpShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
     document.addEventListener('fullscreenchange', onResize);
@@ -2708,7 +2797,7 @@ const WanderingMuseum = ({ onComplete }) => {
       const moveSpeed = baseMoveSpeed;
       const lookSpeed = baseLookSpeed;
 
-      if (!buttonCinematicActive)
+      if (!buttonCinematicActive && !warpActive)
       for (let _simStep = 0; _simStep < simSteps; _simStep++) {
       // Process gamepad input
       if (gamepadIndex !== null) {
@@ -3380,6 +3469,73 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       }
 
+      // Hyperspace warp transition
+      if (warpActive) {
+        const warpElapsed = (currentTime - warpStartTime) / 1000;
+        const warpProgress = Math.min(1, warpElapsed / WARP_DURATION);
+        warpShaderMaterial.uniforms.progress.value = warpProgress;
+
+        // Warp FOV — zoom out dramatically during the rush
+        const fovBoost = Math.sin(warpProgress * Math.PI) * 40;
+        camera.fov = 75 + fovBoost;
+        camera.updateProjectionMatrix();
+
+        if (warpProgress >= 1) {
+          // Warp complete — teleport into trip realm
+          warpActive = false;
+          camera.fov = 75;
+          camera.updateProjectionMatrix();
+
+          const data = warpPendingTripData;
+          warpPendingTripData = null;
+
+          setIsTripping(true);
+          tripStartTime = performance.now();
+
+          camera.position.set(...data.start.pos);
+          prevCamX = camera.position.x;
+          prevCamZ = camera.position.z;
+          yaw = data.start.yaw;
+          pitch = data.start.pitch;
+
+          // Add floating objects to scene
+          floatingObjects = [];
+          _floatingHitBoxArray = [];
+          floatingHitBoxMap.clear();
+          data.pendingFloaters.forEach(({ clone, piece }) => {
+            floatingScene.add(clone);
+            const radius = 0.7;
+            const hitBox = new THREE.Mesh(
+              new THREE.SphereGeometry(radius, 8, 6),
+              new THREE.MeshBasicMaterial({ visible: false })
+            );
+            hitBox.position.copy(clone.position);
+            hitBox.layers.set(1);
+            scene.add(hitBox);
+            const entry = {
+              mesh: clone,
+              hitBox,
+              source: piece,
+              examined: false,
+              fadeStartTime: 0,
+              velocity: new THREE.Vector3(
+                (Math.random() - 0.5) * 0.8,
+                (Math.random() - 0.5) * 0.4,
+                (Math.random() - 0.5) * 0.8
+              ),
+              angularVelocity: new THREE.Vector3(
+                (Math.random() - 0.5) * 1.6,
+                (Math.random() - 0.5) * 1.6,
+                (Math.random() - 0.5) * 1.6
+              )
+            };
+            floatingObjects.push(entry);
+            _floatingHitBoxArray.push(hitBox);
+            floatingHitBoxMap.set(hitBox, entry);
+          });
+        }
+      }
+
       // Update trip effect
       if (trippingRef.current) {
         // Use elapsed time since trip started (in seconds)
@@ -3407,7 +3563,30 @@ const WanderingMuseum = ({ onComplete }) => {
       bloomRenderPass.camera = activeCamera;
 
       // Render with or without post-processing
-      if (trippingRef.current || tripShaderMaterial.uniforms.intensity.value > 0.01) {
+      if (warpActive) {
+        // Hyperspace warp: render museum scene to texture
+        renderer.setRenderTarget(renderTarget);
+        renderer.render(scene, activeCamera);
+        warpShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
+        warpShaderMaterial.uniforms.time.value = (currentTime - warpStartTime) / 1000;
+
+        // Render trip shader to separate target for iris-in (progress > 0.7)
+        if (warpShaderMaterial.uniforms.progress.value > 0.6) {
+          // Set trip shader to full intensity for the preview
+          const warpElapsedSec = (currentTime - warpStartTime) / 1000;
+          tripShaderMaterial.uniforms.time.value = warpElapsedSec;
+          tripShaderMaterial.uniforms.intensity.value = 1.0;
+          tripShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
+          renderer.setRenderTarget(warpTripTarget);
+          renderer.render(tripScene, tripCamera);
+          warpShaderMaterial.uniforms.tTrip.value = warpTripTarget.texture;
+          // Reset intensity so it doesn't affect later frames
+          tripShaderMaterial.uniforms.intensity.value = 0;
+        }
+
+        renderer.setRenderTarget(null);
+        renderer.render(warpScene, warpCamera);
+      } else if (trippingRef.current || tripShaderMaterial.uniforms.intensity.value > 0.01) {
         // Render to texture
         renderer.setRenderTarget(renderTarget);
         renderer.render(scene, activeCamera);
