@@ -1145,12 +1145,126 @@ const WanderingMuseum = ({ onComplete }) => {
     exitZone.visible = false;
     scene.add(exitZone);
 
-    // Ceiling - dark plane overhead to contain light
+    // Ceiling - dark plane overhead; transforms into starfield after 4 art activations
     const ceilingGeometry = new THREE.PlaneGeometry(40, 40);
-    const ceilingMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1e1e2e,
-      roughness: 0.95,
-      metalness: 0.0
+    const ceilingMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime:   { value: 0.0 },
+        uReveal: { value: 0.0 },
+        uCamPos: { value: new THREE.Vector3() }
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform float uTime;
+        uniform float uReveal;
+        uniform vec3  uCamPos;
+        varying vec3  vWorldPos;
+
+        // Hash helpers
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+        vec2 hash22(vec2 p) {
+          float n = hash21(p);
+          return vec2(n, hash21(p + n));
+        }
+
+        // Smooth noise
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash21(i);
+          float b = hash21(i + vec2(1.0, 0.0));
+          float c = hash21(i + vec2(0.0, 1.0));
+          float d = hash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        // 4-octave FBM
+        float fbm(vec2 p) {
+          float v = 0.0, a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 4; i++) {
+            v += a * noise(p);
+            p = rot * p * 2.0;
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        // Star layer — uses direction on sky dome, not surface UVs
+        float starLayer(vec2 dir, float scale, float seed) {
+          vec2 gv = fract(dir * scale) - 0.5;
+          vec2 id = floor(dir * scale);
+          float d = length(gv - (hash22(id + seed) - 0.5) * 0.7);
+          float brightness = hash21(id + seed + 77.0);
+          float starMask = step(0.7, brightness);
+          float twinkle = sin(uTime * (1.5 + brightness * 3.0) + brightness * 6.28) * 0.5 + 0.5;
+          float size = mix(0.015, 0.045, brightness);
+          float star = smoothstep(size, 0.0, d) * starMask;
+          star *= mix(0.4, 1.5, brightness) * mix(0.5, 1.0, twinkle);
+          return star;
+        }
+
+        void main() {
+          // Base dark color — nearly black to match lit MeshStandardMaterial look
+          vec3 baseColor = vec3(0.02, 0.02, 0.03);
+
+          // View direction projected onto sky dome (infinite distance)
+          vec3 viewDir = normalize(vWorldPos - uCamPos);
+          // Use spherical-ish mapping: xz direction as sky coordinates
+          // This makes stars fixed in world space like a real sky
+          vec2 skyUV = viewDir.xz / (abs(viewDir.y) + 0.001);
+
+          // Stars — three density layers
+          float stars = 0.0;
+          stars += starLayer(skyUV, 8.0,  0.0);
+          stars += starLayer(skyUV, 16.0, 100.0);
+          stars += starLayer(skyUV, 32.0, 200.0);
+
+          // Star color — mostly white, hint of blue/gold on bright ones
+          vec3 starColor = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.8), hash21(skyUV * 13.0));
+
+          // Nebula — subtle purple/blue/magenta color wash
+          float t = uTime * 0.02;
+          float n1 = fbm(skyUV * 1.5 + vec2(t, -t * 0.7));
+          float n2 = fbm(skyUV * 2.0 + vec2(-t * 0.5, t * 1.2) + 50.0);
+          vec3 nebula = vec3(0.0);
+          nebula += vec3(0.15, 0.05, 0.25) * n1;  // purple
+          nebula += vec3(0.05, 0.1,  0.3)  * n2;  // blue
+          nebula += vec3(0.2,  0.02, 0.15) * n1 * n2; // magenta
+
+          // Aurora — slow-moving teal/purple bands
+          float auroraY = skyUV.y * 2.0 + uTime * 0.03;
+          float aWave = sin(auroraY + fbm(skyUV + uTime * 0.05) * 3.0);
+          float aBand = smoothstep(0.0, 0.6, aWave) * smoothstep(1.0, 0.6, aWave);
+          float aPulse = 0.5 + 0.5 * sin(uTime * 0.1 + skyUV.x * 3.0);
+          vec3 auroraColor = mix(vec3(0.0, 0.6, 0.5), vec3(0.4, 0.1, 0.6), aPulse);
+          vec3 aurora = auroraColor * aBand * 0.2;
+
+          // Compose starfield
+          vec3 sky = vec3(0.01, 0.01, 0.03); // deep space
+          sky += nebula * 0.6;
+          sky += aurora;
+          sky += starColor * stars;
+
+          // Mix base → starfield based on reveal
+          vec3 col = mix(baseColor, sky, uReveal);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      side: THREE.FrontSide
     });
     const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
     ceiling.rotation.x = Math.PI / 2;
@@ -2724,9 +2838,14 @@ const WanderingMuseum = ({ onComplete }) => {
     const AMBIENT_VOLUME = 0.6;
     let ambientHandles = []; // track all playing copies for fade/stop
 
+    // Starfield ceiling state
+    let starfieldActive = false;
+    let starfieldReveal = 0;
+
     const startAmbientLoop = () => {
       if (ambientPlaying) return;
       ambientPlaying = true;
+      starfieldActive = true;
       const h = am.play('museum1', { volume: AMBIENT_VOLUME });
       if (h) ambientHandles.push(h);
       scheduleAmbientLoop();
@@ -3622,6 +3741,16 @@ const WanderingMuseum = ({ onComplete }) => {
             floatingHitBoxMap.set(hitBox, entry);
           });
         }
+      }
+
+      // Update starfield ceiling
+      if (starfieldActive && starfieldReveal < 1) {
+        starfieldReveal = Math.min(1, starfieldReveal + vizDelta * 0.15);
+      }
+      if (starfieldReveal > 0) {
+        ceilingMaterial.uniforms.uReveal.value = starfieldReveal;
+        ceilingMaterial.uniforms.uTime.value += vizDelta;
+        ceilingMaterial.uniforms.uCamPos.value.copy(activeCamera.position);
       }
 
       // Update trip effect
