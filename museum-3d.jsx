@@ -3082,7 +3082,7 @@ const WanderingMuseum = ({ onComplete }) => {
       if (trippingRef.current && (!mobile || (fpsData.frames % 3 === 0))) {
         const floater = findFloatingTarget();
         if (floater) {
-          const action = 'to examine';
+          const action = 'to experience';
           const inputHint = gamepadIndex !== null ? `press A ${action}` : mobile ? `touch ${action}` : `click ${action}`;
           setInteractPrompt({ name: '', inputHint });
         } else {
