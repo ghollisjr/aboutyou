@@ -1217,14 +1217,70 @@ const WanderingMuseum = ({ onComplete }) => {
           return star;
         }
 
+        // Shooting star — returns color contribution for one meteor slot
+        vec3 shootingStar(vec2 skyUV, float slot) {
+          // Each slot fires periodically with staggered timing
+          float period = mix(6.0, 14.0, hash21(vec2(slot, 0.0)));
+          float offset = hash21(vec2(slot, 1.0)) * period;
+          float cycle = mod(uTime + offset, period);
+          float life = cycle / 1.2; // 1.2s duration
+          if (life > 1.0) return vec3(0.0);
+
+          // Random origin and direction per cycle
+          float cid = floor((uTime + offset) / period);
+          vec2 origin = (hash22(vec2(slot, cid)) - 0.5) * 4.0;
+          float angle = hash21(vec2(cid, slot + 77.0)) * 6.28;
+          vec2 dir = vec2(cos(angle), sin(angle));
+
+          // Head position
+          float speed = mix(1.5, 3.0, hash21(vec2(slot, cid + 33.0)));
+          vec2 head = origin + dir * life * speed;
+
+          // Distance from pixel to the trail line segment
+          vec2 toPixel = skyUV - origin;
+          float along = dot(toPixel, dir);
+          along = clamp(along, 0.0, life * speed);
+          vec2 closest = origin + dir * along;
+          float dist = length(skyUV - closest);
+
+          // Fade: bright at head, fading toward tail
+          float headDist = length(along - life * speed) / (speed * 0.8);
+          float fade = exp(-headDist * 3.0) * smoothstep(0.06, 0.0, dist);
+
+          // Fade in at start, fade out at end of life
+          fade *= smoothstep(0.0, 0.1, life) * smoothstep(1.0, 0.7, life);
+
+          // Warm white head, cooler tail
+          vec3 col = mix(vec3(0.6, 0.7, 1.0), vec3(1.4, 1.2, 1.0), exp(-headDist * 5.0));
+          return col * fade * 1.5;
+        }
+
+        // Distant spiral galaxy
+        float galaxy(vec2 uv, vec2 center, float size, float angle, float seed) {
+          vec2 p = (uv - center) / size;
+          // Rotate to random orientation
+          float ca = cos(angle), sa = sin(angle);
+          p = vec2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y);
+          // Slight elliptical squash
+          p.y *= 1.4;
+          float r = length(p);
+          float a = atan(p.y, p.x);
+          // Spiral arms (log spiral)
+          float spiral = sin(a * 2.0 - log(r + 0.01) * 4.0 + seed) * 0.5 + 0.5;
+          spiral = pow(spiral, 2.0);
+          // Core glow + arm structure
+          float core = exp(-r * 8.0);
+          float arms = spiral * exp(-r * 3.0) * smoothstep(0.0, 0.15, r);
+          float disk = exp(-r * 2.5) * 0.3;
+          return (core + arms * 0.6 + disk) * smoothstep(1.2, 0.0, r);
+        }
+
         void main() {
           // Base dark color — nearly black to match lit MeshStandardMaterial look
           vec3 baseColor = vec3(0.02, 0.02, 0.03);
 
           // View direction projected onto sky dome (infinite distance)
           vec3 viewDir = normalize(vWorldPos - uCamPos);
-          // Use spherical-ish mapping: xz direction as sky coordinates
-          // This makes stars fixed in world space like a real sky
           vec2 skyUV = viewDir.xz / (abs(viewDir.y) + 0.001);
 
           // Stars — three density layers
@@ -1253,11 +1309,32 @@ const WanderingMuseum = ({ onComplete }) => {
           vec3 auroraColor = mix(vec3(0.0, 0.6, 0.5), vec3(0.4, 0.1, 0.6), aPulse);
           vec3 aurora = auroraColor * aBand * 0.2;
 
+          // Shooting stars — 4 concurrent meteor slots
+          vec3 meteors = vec3(0.0);
+          meteors += shootingStar(skyUV, 0.0);
+          meteors += shootingStar(skyUV, 1.0);
+          meteors += shootingStar(skyUV, 2.0);
+          meteors += shootingStar(skyUV, 3.0);
+
+          // Distant galaxies — a few scattered across the sky
+          vec3 galaxyColor = vec3(0.0);
+          // Galaxy 1: warm spiral
+          float g1 = galaxy(skyUV, vec2(1.2, 0.8), 0.35, 0.7, 0.0);
+          galaxyColor += vec3(0.9, 0.7, 0.5) * g1 * 0.25;
+          // Galaxy 2: blue spiral
+          float g2 = galaxy(skyUV, vec2(-1.5, -0.6), 0.25, 2.1, 3.0);
+          galaxyColor += vec3(0.5, 0.6, 1.0) * g2 * 0.2;
+          // Galaxy 3: small faint one
+          float g3 = galaxy(skyUV, vec2(0.3, -1.4), 0.18, 4.5, 7.0);
+          galaxyColor += vec3(0.7, 0.6, 0.9) * g3 * 0.15;
+
           // Compose starfield
           vec3 sky = vec3(0.01, 0.01, 0.03); // deep space
           sky += nebula * 0.6;
           sky += aurora;
           sky += starColor * stars;
+          sky += meteors;
+          sky += galaxyColor;
 
           // Mix base → starfield based on reveal
           vec3 col = mix(baseColor, sky, uReveal);
@@ -2841,11 +2918,12 @@ const WanderingMuseum = ({ onComplete }) => {
     // Starfield ceiling state
     let starfieldActive = false;
     let starfieldReveal = 0;
+    let starfieldTimer = null;
 
     const startAmbientLoop = () => {
       if (ambientPlaying) return;
       ambientPlaying = true;
-      starfieldActive = true;
+      starfieldTimer = setTimeout(() => { starfieldActive = true; }, 16000);
       const h = am.play('museum1', { volume: AMBIENT_VOLUME });
       if (h) ambientHandles.push(h);
       scheduleAmbientLoop();
@@ -3745,7 +3823,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Update starfield ceiling
       if (starfieldActive && starfieldReveal < 1) {
-        starfieldReveal = Math.min(1, starfieldReveal + vizDelta * 0.15);
+        starfieldReveal = 1;
       }
       if (starfieldReveal > 0) {
         ceilingMaterial.uniforms.uReveal.value = starfieldReveal;
