@@ -4188,8 +4188,9 @@ const WanderingMuseum = ({ onComplete }) => {
               {/* Left joystick - movement */}
               <div style={{
                 position: 'absolute',
-                bottom: '100px',
-                left: '40px',
+                top: '50%',
+                left: '70px',
+                transform: 'translateY(-50%)',
                 width: '80px',
                 height: '80px',
                 border: '2px solid rgba(255,255,255,0.3)',
@@ -4210,8 +4211,9 @@ const WanderingMuseum = ({ onComplete }) => {
               {/* Right joystick - look */}
               <div style={{
                 position: 'absolute',
-                bottom: '100px',
-                right: '40px',
+                top: '50%',
+                right: '70px',
+                transform: 'translateY(-50%)',
                 width: '80px',
                 height: '80px',
                 border: '2px solid rgba(255,255,255,0.3)',
