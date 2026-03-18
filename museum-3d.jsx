@@ -29,6 +29,8 @@ const WanderingMuseum = ({ onComplete }) => {
   const screenFadeRef = useRef(0);
   const screenFadeTargetRef = useRef(0);
   const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
+  const [lookingAtRing, setLookingAtRing] = useState(false);
+  const lookingAtRingRef = useRef(false);
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
   const [loading, setLoading] = useState(true);
@@ -3301,6 +3303,27 @@ const WanderingMuseum = ({ onComplete }) => {
         const camRotInv = new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse);
         tripShaderMaterial.uniforms.camRotInv.value.copy(camRotInv);
 
+        // Check if player is looking at any ring (~15 degrees)
+        {
+          const fwd = _forward.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+          let seesRing = false;
+          for (const circle of alignmentCircles) {
+            const toRing = circle.position.clone().sub(camera.position);
+            const dist = toRing.length();
+            if (dist < 0.5) continue; // too close to meaningfully check
+            toRing.normalize();
+            const dot = fwd.dot(toRing);
+            if (Math.abs(dot) > Math.cos(0.26)) { // ~15 degrees, either direction
+              seesRing = true;
+              break;
+            }
+          }
+          if (seesRing !== lookingAtRingRef.current) {
+            lookingAtRingRef.current = seesRing;
+            setLookingAtRing(seesRing);
+          }
+        }
+
         // Check alignment — strict position and look direction
         const positionTolerance = 0.5;  // ±0.5 units on X axis
         const angleTolerance = 0.06;    // ~3.4 degrees
@@ -3418,6 +3441,8 @@ const WanderingMuseum = ({ onComplete }) => {
         wasAlignedRef.current = false;
         alignmentTimeRef.current = 0;
         setAlignmentProgress(0);
+        lookingAtRingRef.current = false;
+        setLookingAtRing(false);
       }
 
       // Audio per-frame updates
@@ -3979,6 +4004,27 @@ const WanderingMuseum = ({ onComplete }) => {
               </button>
             )}
           </div>
+
+          {/* Ring hint - shown when looking at a ring but not yet aligned */}
+          {isTripping && lookingAtRing && !isAligned && (
+            <div style={{
+              position: 'absolute',
+              top: '60%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: 'rgba(255,255,255,0.9)',
+              fontSize: '16px',
+              fontWeight: '400',
+              letterSpacing: '3px',
+              textShadow: '0 0 12px rgba(200,100,255,0.9), 0 0 24px rgba(0,0,0,1)',
+              fontFamily: 'system-ui, sans-serif',
+              pointerEvents: 'none',
+              textAlign: 'center',
+              transition: 'opacity 0.4s ease',
+            }}>
+              change your perspective to align
+            </div>
+          )}
 
           {/* Trip hint */}
           {isTripping && !isAligned && (
