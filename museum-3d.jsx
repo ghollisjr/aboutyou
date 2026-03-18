@@ -3928,7 +3928,7 @@ const WanderingMuseum = ({ onComplete }) => {
                 Time played: {timeStr}
               </div>
               <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '2.2s' }}>
-                <div style={{ marginBottom: '4px' }}>Openness: {openPct}%{openPct > 100 ? ' !!!' : ''}</div>
+                <div style={{ marginBottom: '4px' }}>Openness: {openPct}%</div>
                 <div style={{
                   width: '100%',
                   height: '6px',
