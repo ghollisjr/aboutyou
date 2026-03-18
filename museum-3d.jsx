@@ -2536,9 +2536,10 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       });
 
-      // Freeze velocity, capture base scale
+      // Freeze velocity, capture base scale and start position
       floater.velocity.set(0, 0, 0);
       floater._baseScale = floater.mesh.scale.clone();
+      floater._rushStartPos = floater.mesh.position.clone();
     };
 
     // Hover glow tracking
@@ -3228,36 +3229,37 @@ const WanderingMuseum = ({ onComplete }) => {
         for (let i = floatingObjects.length - 1; i >= 0; i--) {
           const f = floatingObjects[i];
           if (f.examined) {
-            // Dissolve effect
+            // Rush toward camera, growing and spinning
             const elapsed = (performance.now() - f.fadeStartTime) / 1000;
-            const fadeDuration = 1.5;
+            const fadeDuration = 1.8;
             const fadeProgress = Math.min(1.0, elapsed / fadeDuration);
 
-            if (fadeProgress < 0.3) {
-              // First 30%: pulse scale up, ramp emissive
-              const t = fadeProgress / 0.3;
-              const scaleMult = 1.0 + 0.4 * t;
-              f.mesh.scale.copy(f._baseScale).multiplyScalar(scaleMult);
-              f.mesh.traverse(obj => {
-                if (obj.material && obj.material.emissive) {
-                  obj.material.emissiveIntensity = 1.5 + 1.5 * t;
+            // Accelerating rush toward camera (ease-in quadratic — grows faster early)
+            const rushT = fadeProgress * fadeProgress;
+            const camPos = camera.position;
+            f.mesh.position.lerpVectors(f._rushStartPos, camPos, rushT);
+
+            // Scale up as it approaches — starts at base, ends at 8x, quadratic for faster early growth
+            const scaleMult = 1.0 + 7.0 * rushT;
+            f.mesh.scale.copy(f._baseScale).multiplyScalar(scaleMult);
+
+            // Ramp emissive brighter as it gets closer
+            f.mesh.traverse(obj => {
+              if (obj.material) {
+                if (obj.material.emissive) obj.material.emissiveIntensity = 1.5 + 3.0 * rushT;
+                // Fade out opacity in last 20%
+                if (fadeProgress > 0.8) {
+                  obj.material.transparent = true;
+                  obj.material.depthWrite = false;
+                  obj.material.opacity = 1.0 - ((fadeProgress - 0.8) / 0.2);
                 }
-              });
-            } else {
-              // Remaining 70%: shrink to 0, fade opacity
-              const t = (fadeProgress - 0.3) / 0.7;
-              const shrink = 1.0 - t;
-              f.mesh.scale.copy(f._baseScale).multiplyScalar(1.4 * shrink);
-              f.mesh.traverse(obj => {
-                if (obj.material) {
-                  if (obj.material.emissive) obj.material.emissiveIntensity = 3.0 * (1.0 - t);
-                  obj.material.opacity = 1.0 - t;
-                }
-              });
-            }
-            // Spin faster during dissolve
-            f.mesh.rotation.x += 4.0 * vizDelta;
-            f.mesh.rotation.y += 6.0 * vizDelta;
+              }
+            });
+
+            // Spin faster and faster
+            const spinSpeed = 3.0 + 15.0 * rushT;
+            f.mesh.rotation.x += spinSpeed * vizDelta;
+            f.mesh.rotation.y += spinSpeed * 1.3 * vizDelta;
 
             if (fadeProgress >= 1.0) {
               floatingScene.remove(f.mesh);
