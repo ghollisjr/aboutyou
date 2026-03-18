@@ -2107,10 +2107,10 @@ const WanderingMuseum = ({ onComplete }) => {
     // Hyperspace warp transition state
     let warpActive = false;
     let warpStartTime = 0;
-    const WARP_DURATION = 2.5; // seconds
+    const WARP_DURATION = 3.0; // seconds
     let warpPendingTripData = null; // stores trip setup data during warp
 
-    // Warp shader — radial speed lines + color spiral + trip iris-in
+    // Warp shader — hyperspace jump then trip iris-in
     const warpShaderMaterial = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: null },
@@ -2136,8 +2136,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
         #define PI 3.14159265
 
-        vec3 hueToRGB(float h) {
-          return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
         }
 
         void main() {
@@ -2146,76 +2146,59 @@ const WanderingMuseum = ({ onComplete }) => {
           vec2 toCenter = uv - center;
           float dist = length(toCenter);
           float angle = atan(toCenter.y, toCenter.x);
+          float aspect = resolution.x / resolution.y;
 
-          // Phase 1 (0–0.45): radial zoom blur + speed lines
-          // Phase 2 (0.45–0.7): color spiral brightens then darkens
-          // Phase 3 (0.7–1.0): trip scene iris-opens from center
+          // Phase 1 (0.0–0.5): Hyperspace — scene stretches into star lines
+          // Phase 2 (0.5–0.65): Everything goes white-hot
+          // Phase 3 (0.65–0.75): White fades to black
+          // Phase 4 (0.75–1.0): Trip scene iris-opens from center in darkness
 
-          float zoomPhase = smoothstep(0.0, 0.45, progress);
-          float spiralPhase = smoothstep(0.3, 0.7, progress);
-          float spiralDark = smoothstep(0.55, 0.75, progress);
-          float irisPhase = smoothstep(0.7, 1.0, progress);
+          // --- Phase 1: Hyperspace streaks ---
+          float streakPhase = smoothstep(0.0, 0.5, progress);
 
-          // --- Phase 1: Radial zoom blur ---
-          float zoomStrength = zoomPhase * 0.4;
-          vec2 zoomedUV = mix(uv, center, zoomStrength);
-
+          // Increasing radial motion blur of the scene
+          float blurStrength = streakPhase * streakPhase * 0.3;
           vec3 color = vec3(0.0);
-          for (int i = 0; i < 12; i++) {
-            float t = float(i) / 12.0;
-            float blurAmount = zoomPhase * 0.08 * t;
-            vec2 sampleUV = mix(zoomedUV, center, blurAmount);
+          for (int i = 0; i < 16; i++) {
+            float t = float(i) / 16.0;
+            vec2 sampleUV = mix(uv, center, blurStrength * t);
             color += texture2D(tDiffuse, sampleUV).rgb;
           }
-          color /= 12.0;
+          color /= 16.0;
 
-          // Speed lines
-          float lineAngle = angle * 40.0;
-          float line = pow(abs(sin(lineAngle)), 20.0);
-          float lineIntensity = zoomPhase * (0.5 + dist * 2.0);
-          vec3 lineColor = hueToRGB(fract(angle / (2.0 * PI) + time * 0.5));
-          color += line * lineIntensity * lineColor;
+          // Star streaks — thin bright radial lines (like stars stretching)
+          // Multiple layers of streaks at different densities
+          float streak1 = pow(abs(sin(angle * 60.0 + hash(vec2(floor(angle * 60.0 / PI))) * 6.28)), 40.0);
+          float streak2 = pow(abs(sin(angle * 120.0 + hash(vec2(floor(angle * 120.0 / PI))) * 6.28)), 60.0);
+          float streak3 = pow(abs(sin(angle * 30.0 + hash(vec2(floor(angle * 30.0 / PI))) * 6.28)), 30.0);
 
-          // Chromatic aberration
-          float aberration = zoomPhase * 0.015;
-          vec2 rUV = (zoomedUV - center) * (1.0 + aberration) + center;
-          vec2 bUV = (zoomedUV - center) * (1.0 - aberration) + center;
-          color.r = mix(color.r, texture2D(tDiffuse, rUV).r, zoomPhase * 0.5);
-          color.b = mix(color.b, texture2D(tDiffuse, bUV).b, zoomPhase * 0.5);
+          // Streaks get longer from center outward, intensify with progress
+          float streakIntensity = streakPhase * streakPhase;
+          float radialFade = smoothstep(0.0, 0.3, dist); // no streaks at very center
+          float streaks = (streak1 * 0.6 + streak2 * 0.3 + streak3 * 0.8) * radialFade;
 
-          // Vignette
-          float vignette = 1.0 - dist * zoomPhase * 1.5;
-          color *= max(vignette, 0.0);
-          color *= 1.0 + zoomPhase * 2.0;
+          // Streak color: white-blue core with slight color variation
+          vec3 streakColor = mix(vec3(0.7, 0.8, 1.0), vec3(1.0), streaks);
+          color += streaks * streakIntensity * streakColor * 2.0;
 
-          // --- Phase 2: Color spiral ---
-          // Rotating spiral arms with full-spectrum hue
-          float spiralArms = 5.0;
-          float spiralAngle = angle * spiralArms - dist * 12.0 + time * 8.0;
-          float spiral = sin(spiralAngle) * 0.5 + 0.5;
-          // Second layer for depth
-          float spiral2 = sin(angle * 3.0 + dist * 8.0 - time * 6.0) * 0.5 + 0.5;
+          // Scene gets brighter as you accelerate
+          color *= 1.0 + streakPhase * 3.0;
 
-          vec3 spiralColor = hueToRGB(fract(angle / (2.0 * PI) + dist * 0.3 + time * 0.2));
-          vec3 spiralColor2 = hueToRGB(fract(-angle / (2.0 * PI) + dist * 0.5 - time * 0.15 + 0.5));
-          vec3 spiralMix = spiralColor * spiral + spiralColor2 * spiral2;
+          // --- Phase 2: White-hot flash ---
+          float whiteness = smoothstep(0.4, 0.6, progress);
+          color = mix(color, vec3(4.0), whiteness);
 
-          // Brightness: ramp up then down
-          float spiralBright = sin(smoothstep(0.3, 0.7, progress) * PI) * 2.0;
-          spiralMix *= spiralBright;
+          // --- Phase 3: White fades to black ---
+          float darkness = smoothstep(0.6, 0.75, progress);
+          color *= 1.0 - darkness;
 
-          // Blend spiral over scene
-          color = mix(color, spiralMix, spiralPhase);
-
-          // Darken after peak
-          color *= mix(1.0, 0.02, spiralDark * (1.0 - irisPhase));
-
-          // --- Phase 3: Trip scene iris-in from center ---
+          // --- Phase 4: Trip iris opens from black ---
+          float irisPhase = smoothstep(0.75, 1.0, progress);
           if (irisPhase > 0.0) {
             vec3 tripColor = texture2D(tTrip, uv).rgb;
-            // Expanding circle from center
-            float irisRadius = irisPhase * 1.2; // slightly > sqrt(2)/2 to cover corners
-            float irisMask = smoothstep(irisRadius, irisRadius - 0.15, dist);
+            float irisRadius = irisPhase * 0.95;
+            float edgeSoftness = 0.06;
+            float irisMask = smoothstep(irisRadius, max(0.0, irisRadius - edgeSoftness), dist);
             color = mix(color, tripColor, irisMask);
           }
 
@@ -2431,6 +2414,10 @@ const WanderingMuseum = ({ onComplete }) => {
         // Start hyperspace warp — trip setup deferred until warp completes
         warpActive = true;
         warpStartTime = performance.now();
+
+        // Instantly kill button vignette so it doesn't darken the warp
+        buttonVignetteRef.current = 0;
+        setButtonVignette(0);
 
         // Pre-compute trip data so it's ready when warp ends
         const tripStarts = [
@@ -3182,10 +3169,11 @@ const WanderingMuseum = ({ onComplete }) => {
         }
       });
 
-      // Fade vignette down when not hovering button
-      if (!hoveredPiece || !hoveredPiece.isButton) {
+      // Fade vignette down when not hovering button or during warp/trip
+      if (!hoveredPiece || !hoveredPiece.isButton || warpActive || trippingRef.current) {
         if (buttonVignetteRef.current > 0) {
-          buttonVignetteRef.current = Math.max(0, buttonVignetteRef.current - vizDelta * 0.8);
+          const fadeSpeed = (warpActive || trippingRef.current) ? 2.0 : 0.8;
+          buttonVignetteRef.current = Math.max(0, buttonVignetteRef.current - vizDelta * fadeSpeed);
           setButtonVignette(buttonVignetteRef.current);
         }
       }
@@ -3491,7 +3479,9 @@ const WanderingMuseum = ({ onComplete }) => {
 
           trippingRef.current = true;
           setIsTripping(true);
-          tripStartTime = performance.now();
+          tripStartTime = warpStartTime;
+          // Start at full intensity so there's no brightness dip after warp
+          tripShaderMaterial.uniforms.intensity.value = 1.0;
 
           camera.position.set(...data.start.pos);
           prevCamX = camera.position.x;
@@ -3571,8 +3561,8 @@ const WanderingMuseum = ({ onComplete }) => {
         warpShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
         warpShaderMaterial.uniforms.time.value = (currentTime - warpStartTime) / 1000;
 
-        // Render trip shader to separate target for iris-in (progress > 0.7)
-        if (warpShaderMaterial.uniforms.progress.value > 0.6) {
+        // Render trip shader to separate target for iris-in (progress > 0.75)
+        if (warpShaderMaterial.uniforms.progress.value > 0.7) {
           // Set trip shader to full intensity for the preview
           const warpElapsedSec = (currentTime - warpStartTime) / 1000;
           tripShaderMaterial.uniforms.time.value = warpElapsedSec;
