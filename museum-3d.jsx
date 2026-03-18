@@ -2720,17 +2720,15 @@ const WanderingMuseum = ({ onComplete }) => {
     let ambientHandle = null;
     let ambientPlaying = false;
     let ambientLoopTimer = null;
-    const AMBIENT_LOOP_POINT = 56; // restart next copy at 56s (8s overlap with 1:04 track)
-    const AMBIENT_OVERLAP = 8;     // crossfade duration
+    const AMBIENT_LOOP_POINT = 64; // restart next copy at 64s; last 8s of old overlaps with first 8s of new
     const AMBIENT_VOLUME = 0.6;
+    let ambientHandles = []; // track all playing copies for fade/stop
 
-    let ambientFirstPlay = true;
     const startAmbientLoop = () => {
       if (ambientPlaying) return;
       ambientPlaying = true;
-      const fadeIn = ambientFirstPlay ? 0 : 0.5;
-      ambientFirstPlay = false;
-      ambientHandle = am.play('museum1', { volume: AMBIENT_VOLUME, fadeIn });
+      const h = am.play('museum1', { volume: AMBIENT_VOLUME });
+      if (h) ambientHandles.push(h);
       scheduleAmbientLoop();
     };
 
@@ -2738,11 +2736,12 @@ const WanderingMuseum = ({ onComplete }) => {
       if (ambientLoopTimer) clearTimeout(ambientLoopTimer);
       ambientLoopTimer = setTimeout(() => {
         if (!ambientPlaying) return;
-        // Start next copy while current still has 8s left
-        const prevHandle = ambientHandle;
-        ambientHandle = am.play('museum1', { volume: AMBIENT_VOLUME, fadeIn: AMBIENT_OVERLAP });
-        // Fade out the previous copy over the overlap
-        if (prevHandle) am.stop(prevHandle, { fadeOut: AMBIENT_OVERLAP });
+        // Start next copy at full volume — both play simultaneously during the 8s overlap
+        // The old copy plays to its natural end
+        const h = am.play('museum1', { volume: AMBIENT_VOLUME });
+        if (h) ambientHandles.push(h);
+        // Clean up handles that have finished naturally
+        ambientHandles = ambientHandles.filter(h => am.playing.has(h));
         scheduleAmbientLoop();
       }, AMBIENT_LOOP_POINT * 1000);
     };
@@ -2750,7 +2749,8 @@ const WanderingMuseum = ({ onComplete }) => {
     const stopAmbientMusic = (fadeOut = 0.05) => {
       ambientPlaying = false;
       if (ambientLoopTimer) { clearTimeout(ambientLoopTimer); ambientLoopTimer = null; }
-      if (ambientHandle) { am.stop(ambientHandle, { fadeOut }); ambientHandle = null; }
+      ambientHandles.forEach(h => am.stop(h, { fadeOut }));
+      ambientHandles = [];
     };
     let lastFootstepTime = 0;
     let prevCamX = 0;
@@ -3544,13 +3544,13 @@ const WanderingMuseum = ({ onComplete }) => {
             }, (introDur - crossfadeDur) * 1000);
           }
           // Fade ambient music down quickly
-          if (ambientHandle) am.setVolume(ambientHandle, 0, 0.3);
+          ambientHandles.forEach(h => am.setVolume(h, 0, 0.3));
         } else if (!buttonInRange && tripBassPlaying) {
           tripBassPlaying = false;
           if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
           if (tripBassLoopHandle) { am.stop(tripBassLoopHandle, { fadeOut: 0.05 }); tripBassLoopHandle = null; }
           // Fade ambient music back up
-          if (ambientHandle) am.setVolume(ambientHandle, AMBIENT_VOLUME, 0.3);
+          ambientHandles.forEach(h => am.setVolume(h, AMBIENT_VOLUME, 0.3));
         }
       }
 
