@@ -84,6 +84,11 @@ export class AudioManager {
     this.playing.delete(handle);
   }
 
+  getDuration(name) {
+    const buf = this.buffers.get(name);
+    return buf ? buf.duration : 0;
+  }
+
   setVolume(handle, volume, rampTime = 0.05) {
     if (!handle || !this.playing.has(handle)) return;
     const now = this.ctx.currentTime;

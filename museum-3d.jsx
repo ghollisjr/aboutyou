@@ -3468,13 +3468,20 @@ const WanderingMuseum = ({ onComplete }) => {
         const buttonInRange = hoveredPiece && hoveredPiece.isButton && !hoveredPiece.examined;
         if (buttonInRange && !tripBassPlaying) {
           tripBassPlaying = true;
-          tripBassHandle = am.play('tripbass', { volume: 0.6, onended: () => {
-            // When tripbass finishes, loop tripbass_loop if still in range
-            tripBassHandle = null;
-            if (tripBassPlaying) {
-              tripBassLoopHandle = am.play('tripbass_loop', { loop: true, volume: 0.6 });
-            }
-          }});
+          tripBassHandle = am.play('tripbass', { volume: 0.6 });
+          // Schedule crossfade: start loop before intro ends, overlap with fade
+          const crossfadeDur = 0.15; // 150ms crossfade overlap
+          const introDur = am.getDuration('tripbass');
+          if (introDur > crossfadeDur) {
+            setTimeout(() => {
+              if (!tripBassPlaying || !tripBassHandle) return;
+              // Fade out intro tail
+              am.stop(tripBassHandle, { fadeOut: crossfadeDur });
+              tripBassHandle = null;
+              // Fade in loop
+              tripBassLoopHandle = am.play('tripbass_loop', { loop: true, volume: 0.6, fadeIn: crossfadeDur });
+            }, (introDur - crossfadeDur) * 1000);
+          }
         } else if (!buttonInRange && tripBassPlaying) {
           tripBassPlaying = false;
           if (tripBassHandle) { am.stop(tripBassHandle, { fadeOut: 0.05 }); tripBassHandle = null; }
