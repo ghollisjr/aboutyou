@@ -1203,7 +1203,7 @@ const WanderingMuseum = ({ onComplete }) => {
           return v;
         }
 
-        // Star layer — uses direction on sky dome, not surface UVs
+        // Grid-based star layer with sharp points
         float starLayer(vec2 dir, float scale, float seed) {
           vec2 gv = fract(dir * scale) - 0.5;
           vec2 id = floor(dir * scale);
@@ -1211,8 +1211,8 @@ const WanderingMuseum = ({ onComplete }) => {
           float brightness = hash21(id + seed + 77.0);
           float starMask = step(0.7, brightness);
           float twinkle = sin(uTime * (1.5 + brightness * 3.0) + brightness * 6.28) * 0.5 + 0.5;
-          float size = mix(0.015, 0.045, brightness);
-          float star = smoothstep(size, 0.0, d) * starMask;
+          float size = mix(0.01, 0.04, brightness);
+          float star = smoothstep(size, size * 0.1, d) * starMask;
           star *= mix(0.4, 1.5, brightness) * mix(0.5, 1.0, twinkle);
           return star;
         }
@@ -1279,35 +1279,40 @@ const WanderingMuseum = ({ onComplete }) => {
           // Base dark color — nearly black to match lit MeshStandardMaterial look
           vec3 baseColor = vec3(0.02, 0.02, 0.03);
 
-          // View direction projected onto sky dome (infinite distance)
+          // Azimuthal equidistant projection — uniform star density, no horizon stretch
           vec3 viewDir = normalize(vWorldPos - uCamPos);
-          vec2 skyUV = viewDir.xz / (abs(viewDir.y) + 0.001);
+          float theta = acos(clamp(viewDir.y, 0.0, 1.0)); // angle from zenith
+          float phi = atan(viewDir.z, viewDir.x);          // azimuth
+          // theta * direction: zenith→center, horizon→edge; atan pole canceled by theta→0
+          vec2 skyUV = vec2(cos(phi), sin(phi)) * theta * 2.0;
 
           // Stars — three density layers
           float stars = 0.0;
-          stars += starLayer(skyUV, 8.0,  0.0);
-          stars += starLayer(skyUV, 16.0, 100.0);
-          stars += starLayer(skyUV, 32.0, 200.0);
+          stars += starLayer(skyUV, 10.0,  0.0);
+          stars += starLayer(skyUV, 20.0, 100.0);
+          stars += starLayer(skyUV, 40.0, 200.0);
 
           // Star color — mostly white, hint of blue/gold on bright ones
           vec3 starColor = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.8), hash21(skyUV * 13.0));
 
-          // Nebula — subtle purple/blue/magenta color wash
-          float t = uTime * 0.02;
-          float n1 = fbm(skyUV * 1.5 + vec2(t, -t * 0.7));
-          float n2 = fbm(skyUV * 2.0 + vec2(-t * 0.5, t * 1.2) + 50.0);
+          // Nebula — sine-based color washes, no grid noise (mobile-safe)
+          float nt = uTime * 0.02;
+          float n1 = 0.5 + 0.5 * sin(skyUV.x * 1.3 + skyUV.y * 0.9 + nt + sin(skyUV.y * 2.1 - nt * 0.7) * 0.8);
+          float n2 = 0.5 + 0.5 * sin(skyUV.x * 0.7 - skyUV.y * 1.6 + nt * 1.3 + sin(skyUV.x * 1.8 + nt * 0.5) * 0.9);
           vec3 nebula = vec3(0.0);
           nebula += vec3(0.15, 0.05, 0.25) * n1;  // purple
           nebula += vec3(0.05, 0.1,  0.3)  * n2;  // blue
           nebula += vec3(0.2,  0.02, 0.15) * n1 * n2; // magenta
 
-          // Aurora — slow-moving teal/purple bands
-          float auroraY = skyUV.y * 2.0 + uTime * 0.03;
-          float aWave = sin(auroraY + fbm(skyUV + uTime * 0.05) * 3.0);
-          float aBand = smoothstep(0.0, 0.6, aWave) * smoothstep(1.0, 0.6, aWave);
+          // Aurora — pure sine-wave bands, no grid-based noise (mobile-safe)
+          float aT = uTime * 0.04;
+          float aWave1 = sin(skyUV.y * 3.0 + aT + sin(skyUV.x * 1.7 + aT * 0.7) * 1.5);
+          float aWave2 = sin(skyUV.y * 2.3 - aT * 0.6 + sin(skyUV.x * 2.1 - aT * 0.5) * 1.2);
+          float aBand = smoothstep(0.3, 0.8, aWave1) * smoothstep(1.0, 0.8, aWave1);
+          aBand += smoothstep(0.3, 0.8, aWave2) * smoothstep(1.0, 0.8, aWave2) * 0.6;
           float aPulse = 0.5 + 0.5 * sin(uTime * 0.1 + skyUV.x * 3.0);
           vec3 auroraColor = mix(vec3(0.0, 0.6, 0.5), vec3(0.4, 0.1, 0.6), aPulse);
-          vec3 aurora = auroraColor * aBand * 0.2;
+          vec3 aurora = auroraColor * aBand * 0.15;
 
           // Shooting stars — 4 concurrent meteor slots
           vec3 meteors = vec3(0.0);
