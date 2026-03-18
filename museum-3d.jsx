@@ -847,6 +847,11 @@ const WanderingMuseum = ({ onComplete }) => {
           return v;
         }
 
+        // HSV hue to RGB (full saturation, full value)
+        vec3 hueToRGB(float h) {
+          return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+        }
+
         void main() {
           vec2 uv = vUv;
           float aspect = resolution.x / resolution.y;
@@ -859,8 +864,8 @@ const WanderingMuseum = ({ onComplete }) => {
           float dist = length(p);
           float angle = atan(p.y, p.x);
 
-          // Kaleidoscope: fold angle into N segments
-          float segments = 6.0;
+          // Kaleidoscope: fold angle into N segments (tighter)
+          float segments = 8.0;
           float ka = mod(angle, 2.0 * PI / segments);
           ka = abs(ka - PI / segments);
           vec2 kp = vec2(cos(ka), sin(ka)) * dist;
@@ -868,32 +873,42 @@ const WanderingMuseum = ({ onComplete }) => {
           // Tunnel: scroll radial coordinate inward over time
           float tunnel = 1.0 / (dist + 0.1) + time * 0.8;
 
-          // Domain warp: distort coordinates with fbm
-          vec2 warpUV = kp * 3.0 + vec2(tunnel, time * 0.3);
+          // Domain warp: distort coordinates with fbm (tighter patterns)
+          vec2 warpUV = kp * 5.0 + vec2(tunnel, time * 0.3);
           float warp1 = fbm(warpUV);
           float warp2 = fbm(warpUV + vec2(warp1 * 2.0 + time * 0.2, warp1 * 1.5 - time * 0.15));
 
-          // Color palette — deep purples, cyans, magentas, with hot whites
-          float h1 = sin(warp2 * 6.0 + time * 1.2) * 0.5 + 0.5;
-          float h2 = sin(warp2 * 4.0 - time * 0.8 + 2.0) * 0.5 + 0.5;
-          float h3 = sin(warp1 * 5.0 + time * 0.6 + 4.0) * 0.5 + 0.5;
+          // Full-spectrum color via rotating hue
+          // Map warp values + time into hue angles that sweep the full color wheel
+          float hue = fract(warp2 * 0.8 + time * 0.06);
+          float hue2 = fract(warp1 * 0.6 - time * 0.04 + 0.33);
+          float hue3 = fract((warp1 + warp2) * 0.5 + time * 0.08 + 0.66);
 
-          vec3 c1 = vec3(0.6, 0.0, 0.8);  // purple
-          vec3 c2 = vec3(0.0, 0.7, 0.9);  // cyan
-          vec3 c3 = vec3(1.0, 0.2, 0.6);  // magenta
-          vec3 c4 = vec3(0.1, 0.0, 0.3);  // deep void
+          vec3 col1 = hueToRGB(hue);
+          vec3 col2 = hueToRGB(hue2);
+          vec3 col3 = hueToRGB(hue3);
 
-          vec3 background = mix(c4, c1, h1);
-          background = mix(background, c2, h2 * 0.6);
-          background = mix(background, c3, h3 * 0.4);
+          // Mixing weights with deeper dark fluctuations
+          float h1 = sin(warp2 * 8.0 + time * 1.2) * 0.5 + 0.5;
+          float h2 = sin(warp2 * 6.0 - time * 0.8 + 2.0) * 0.5 + 0.5;
+          float h3 = sin(warp1 * 7.0 + time * 0.6 + 4.0) * 0.5 + 0.5;
+
+          // Dark pulse: periodically dips brightness toward black
+          float darkPulse = sin(time * 0.7) * sin(time * 1.3 + warp1 * 3.0);
+          float darkness = smoothstep(-0.2, -0.8, darkPulse); // 0 = normal, 1 = dark
+
+          vec3 background = mix(col1 * 0.7, col2 * 0.8, h1);
+          background = mix(background, col3 * 0.6, h2 * 0.5);
+          // Apply dark fluctuation
+          background *= mix(1.0, 0.08, darkness);
 
           // Add tunnel radial glow
-          float tunnelGlow = exp(-dist * 1.5) * (sin(tunnel * 3.0) * 0.3 + 0.5);
-          background += vec3(0.2, 0.1, 0.4) * tunnelGlow;
+          float tunnelGlow = exp(-dist * 1.5) * (sin(tunnel * 4.0) * 0.3 + 0.5);
+          background += hueToRGB(fract(hue + 0.5)) * 0.3 * tunnelGlow * mix(1.0, 0.15, darkness);
 
-          // Subtle moiré interference
-          float moire = sin(dist * 30.0 - time * 3.0) * sin(angle * 8.0 + time * 1.5);
-          background += vec3(0.05, 0.08, 0.1) * moire;
+          // Moiré interference (tighter)
+          float moire = sin(dist * 50.0 - time * 4.0) * sin(angle * 12.0 + time * 2.0);
+          background += vec3(0.06) * moire * mix(1.0, 0.1, darkness);
 
           // Scene texture (used during transition)
           vec4 sceneColor = texture2D(tDiffuse, uv);
@@ -1574,24 +1589,19 @@ const WanderingMuseum = ({ onComplete }) => {
       tableGroup.add(leg);
     });
     
-    // The Button
+    // The Button — self-illuminated, no external light
     const buttonGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.15, 32);
-    const buttonMaterial = new THREE.MeshStandardMaterial({ 
+    const buttonMaterial = new THREE.MeshStandardMaterial({
       color: 0xff0066,
       emissive: 0xff0066,
-      emissiveIntensity: 0.5,
-      roughness: 0.3,
-      metalness: 0.8
+      emissiveIntensity: 0.8,
+      roughness: 0.6,
+      metalness: 0.1
     });
     const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
     button.position.y = 1.13;
     button.rotation.x = 0;
     tableGroup.add(button);
-    
-    // Button glow effect
-    const buttonLight = new THREE.PointLight(0xff0066, 1, 3);
-    buttonLight.position.y = 1.2;
-    tableGroup.add(buttonLight);
     
     // "trip balls" name plate (same style as pedestal labels)
     const btnLabelCanvas = document.createElement('canvas');
@@ -2003,9 +2013,13 @@ const WanderingMuseum = ({ onComplete }) => {
     };
 
     // Finish game function - defined early so it's accessible from event handlers
-    const finishGame = () => {
-      // Fade out all audio on game end
-      am.stopAll();
+    const finishGame = (allowAudioFinish) => {
+      if (allowAudioFinish) {
+        // Let current sounds finish naturally, then stop any remaining
+        setTimeout(() => am.stopAll(), 3000);
+      } else {
+        am.stopAll();
+      }
 
       const gameState = gameStateRef.current;
       const totalTime = (Date.now() - gameState.startTime) / 1000;
@@ -2426,7 +2440,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
       if (foundRegular === regularObjects && !trippingRef.current) {
         gameStateRef.current.completionMethod = 'sober';
-        setTimeout(() => finishGame(), 500);
+        setTimeout(() => finishGame(true), 500);
       }
     };
 
@@ -3051,7 +3065,7 @@ const WanderingMuseum = ({ onComplete }) => {
           buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + vizDelta * 0.4);
           setButtonVignette(buttonVignetteRef.current);
           if (hoveredPiece.buttonMesh) {
-            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 1.0;
+            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.8 + buttonVignetteRef.current * 0.7;
           }
         } else {
           // Ramp oscillation amplitude up smoothly
@@ -3063,7 +3077,7 @@ const WanderingMuseum = ({ onComplete }) => {
         }
         if (hoveredPiece && hoveredPiece.isButton) {
           if (hoveredPiece.buttonMesh) {
-            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5;
+            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.8;
           }
         }
         if (hoveredPiece) {
@@ -3117,7 +3131,7 @@ const WanderingMuseum = ({ onComplete }) => {
       // Animate button pulse
       buttonPulseTime += vizDelta * 2;
       button.position.y = 1.13 + Math.sin(buttonPulseTime) * 0.02;
-      buttonMaterial.emissiveIntensity = 0.5 + Math.sin(buttonPulseTime * 2) * 0.3;
+      buttonMaterial.emissiveIntensity = 0.8 + Math.sin(buttonPulseTime * 2) * 0.3;
 
       // Animate trip portal and alignment circles (only visible when tripping)
       if (trippingRef.current) {
