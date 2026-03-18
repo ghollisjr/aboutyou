@@ -2201,7 +2201,7 @@ const WanderingMuseum = ({ onComplete }) => {
     const findFloatingTarget = () => {
       if (_floatingHitBoxArray.length === 0) return null;
       _raycaster.setFromCamera(_screenCenter, camera);
-      _raycaster.far = 20;
+      _raycaster.far = 60;
       const intersects = _raycaster.intersectObjects(_floatingHitBoxArray, false);
       if (intersects.length > 0) {
         const hit = intersects[0].object;
@@ -2287,11 +2287,8 @@ const WanderingMuseum = ({ onComplete }) => {
           );
           floatingScene.add(clone);
 
-          // Create invisible hit box sphere
-          const bbox = new THREE.Box3().setFromObject(clone);
-          const size = new THREE.Vector3();
-          bbox.getSize(size);
-          const radius = Math.max(size.x, size.y, size.z) * 0.5;
+          // Create invisible hit box sphere — fixed radius for reliable raycasting
+          const radius = 0.7;
           const hitBox = new THREE.Mesh(
             new THREE.SphereGeometry(radius, 8, 6),
             new THREE.MeshBasicMaterial({ visible: false })
