@@ -2040,33 +2040,13 @@ const WanderingMuseum = ({ onComplete }) => {
         gameState.completionMethod = 'early'; // Left early
       }
       
-      // Calculate base abstractness
-      let abstractnessLevel = 0;
-      
-      if (gameState.completionMethod === 'sober') {
-        // Sober completion - found all objects without tripping
-        abstractnessLevel = Math.min(1, (
-          (uniqueDescriptions / regularObjects) * 0.5 +  // Found everything
-          (hiddenFound) * 0.3 +
-          Math.min(1, gameState.rotationsPerformed / 10) * 0.2
-        ));
-      } else if (gameState.completionMethod === 'trip') {
-        // Trip completion - found the portal while tripping (max openness!)
-        abstractnessLevel = Math.min(1, (
-          (uniqueDescriptions / regularObjects) * 0.3 +
-          (hiddenFound) * 0.2 +
-          Math.min(1, gameState.rotationsPerformed / 10) * 0.1 +
-          0.4  // Huge bonus for navigating the trip exit
-        ));
-      } else {
-        // Early exit - penalized based on incompletion
-        const completionRatio = foundRegular / regularObjects;
-        abstractnessLevel = Math.min(1, (
-          completionRatio * 0.4 +
-          (hiddenFound) * 0.2 +
-          Math.min(1, gameState.rotationsPerformed / 10) * 0.1 +
-          (trippedBalls) * 0.3
-        )) * 0.7;  // 30% penalty for early exit
+      // Calculate openness: 100% for finding all pieces + 100% for tripping = 200% max
+      const pieceOpenness = foundRegular / regularObjects; // 0–1 (100% for all pieces)
+      const tripOpenness = trippedBalls; // 0 or 1 (100% for tripping)
+      let abstractnessLevel = pieceOpenness + tripOpenness; // 0–2
+
+      if (gameState.completionMethod === 'early') {
+        // No penalty — you get credit for what you found
       }
 
       const results = {
@@ -2978,7 +2958,10 @@ const WanderingMuseum = ({ onComplete }) => {
 
       // Button cinematic: smoothly lerp camera to look at button and slide closer
       if (buttonCinematicActive) {
-        yaw += (buttonCinematicTargetYaw - yaw) * 3 * vizDelta;
+        // Shortest-arc yaw lerp (avoid spinning 360° when crossing ±π)
+        let yawDiff = buttonCinematicTargetYaw - yaw;
+        yawDiff = yawDiff - Math.round(yawDiff / (2 * Math.PI)) * 2 * Math.PI;
+        yaw += yawDiff * 3 * vizDelta;
         pitch += (buttonCinematicTargetPitch - pitch) * 3 * vizDelta;
         camera.rotation.order = 'YXZ';
         camera.rotation.y = yaw;
@@ -3686,6 +3669,7 @@ const WanderingMuseum = ({ onComplete }) => {
         const seconds = Math.floor(completionResults.totalTime % 60);
         const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         const openPct = Math.round(completionResults.abstractnessLevel * 100);
+        const barPct = Math.min(openPct, 100); // cap bar width at 100%
         const fadeInKeyframes = `@keyframes resultsFadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`;
         return (
         <div style={{
@@ -3700,7 +3684,7 @@ const WanderingMuseum = ({ onComplete }) => {
         }}>
           <style>{fadeInKeyframes}{`
             @keyframes resultsBgFade { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes openBarFill { from { width: 0%; } to { width: ${openPct}%; } }
+            @keyframes openBarFill { from { width: 0%; } to { width: ${barPct}%; } }
           `}</style>
           <div style={{
             color: 'white',
@@ -3735,7 +3719,7 @@ const WanderingMuseum = ({ onComplete }) => {
                 Time played: {timeStr}
               </div>
               <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '2.2s' }}>
-                <div style={{ marginBottom: '4px' }}>Openness: {openPct}%</div>
+                <div style={{ marginBottom: '4px' }}>Openness: {openPct}%{openPct > 100 ? ' !!!' : ''}</div>
                 <div style={{
                   width: '100%',
                   height: '6px',
@@ -3745,8 +3729,10 @@ const WanderingMuseum = ({ onComplete }) => {
                 }}>
                   <div style={{
                     height: '100%',
-                    width: `${openPct}%`,
-                    background: `linear-gradient(90deg, ${headerColor}, ${method === 'trip' ? '#8855ff' : method === 'sober' ? '#ff8844' : '#888888'})`,
+                    width: `${barPct}%`,
+                    background: openPct > 100
+                      ? 'linear-gradient(90deg, #00ffff, #ff00ff, #ffff00, #00ffff)'
+                      : `linear-gradient(90deg, ${headerColor}, ${method === 'trip' ? '#8855ff' : method === 'sober' ? '#ff8844' : '#888888'})`,
                     borderRadius: '3px',
                     animation: 'openBarFill 1s ease-out both',
                     animationDelay: '2.4s'
