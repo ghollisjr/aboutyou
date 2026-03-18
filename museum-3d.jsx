@@ -2280,10 +2280,14 @@ const WanderingMuseum = ({ onComplete }) => {
           });
           const scale = 0.4 + Math.random() * 0.2;
           clone.scale.multiplyScalar(scale);
+          // Distribute on a sphere shell around player start position
+          const sphereRadius = 10 + Math.random() * 8;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
           clone.position.set(
-            (Math.random() - 0.5) * 34,
-            0.5 + Math.random() * 3.5,
-            (Math.random() - 0.5) * 34
+            start.pos[0] + sphereRadius * Math.sin(phi) * Math.cos(theta),
+            start.pos[1] + sphereRadius * Math.cos(phi),
+            start.pos[2] + sphereRadius * Math.sin(phi) * Math.sin(theta)
           );
           floatingScene.add(clone);
 
@@ -3112,13 +3116,14 @@ const WanderingMuseum = ({ onComplete }) => {
             f.mesh.rotation.y += f.angularVelocity.y * vizDelta;
             f.mesh.rotation.z += f.angularVelocity.z * vizDelta;
 
-            // Bounce off boundaries
-            if (f.mesh.position.x > 18) { f.mesh.position.x = 18; f.velocity.x *= -1; }
-            if (f.mesh.position.x < -18) { f.mesh.position.x = -18; f.velocity.x *= -1; }
-            if (f.mesh.position.z > 18) { f.mesh.position.z = 18; f.velocity.z *= -1; }
-            if (f.mesh.position.z < -18) { f.mesh.position.z = -18; f.velocity.z *= -1; }
-            if (f.mesh.position.y > 4.5) { f.mesh.position.y = 4.5; f.velocity.y *= -1; }
-            if (f.mesh.position.y < 0.3) { f.mesh.position.y = 0.3; f.velocity.y *= -1; }
+            // Bounce off spherical boundary (radius 25 from origin)
+            const distFromCenter = f.mesh.position.length();
+            if (distFromCenter > 25) {
+              // Reflect velocity inward
+              const normal = f.mesh.position.clone().normalize();
+              f.velocity.reflect(normal);
+              f.mesh.position.normalize().multiplyScalar(25);
+            }
 
             // Sync hitbox
             f.hitBox.position.copy(f.mesh.position);
