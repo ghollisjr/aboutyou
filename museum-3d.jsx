@@ -1576,7 +1576,8 @@ const WanderingMuseum = ({ onComplete }) => {
       transparent: true
     });
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), btnLabelMaterial);
-    label.position.set(0, 0.85, 0.78);
+    label.position.set(0, 0.85, -0.78);
+    label.rotation.y = Math.PI;
     tableGroup.add(label);
     
     // Invisible interaction volume for trip button table
@@ -1592,7 +1593,7 @@ const WanderingMuseum = ({ onComplete }) => {
     // Pulsing animation for button
     let buttonPulseTime = 0;
 
-    tableGroup.position.set(0, 0, 0);
+    tableGroup.position.set(0, 0, 19);
     scene.add(tableGroup);
     
     // Add button to interactable objects
