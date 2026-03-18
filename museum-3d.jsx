@@ -4,6 +4,10 @@ import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { AudioManager } from './src/lib/audio.js';
 
 const WanderingMuseum = ({ onComplete }) => {
@@ -21,6 +25,9 @@ const WanderingMuseum = ({ onComplete }) => {
   const alignmentTimeRef = useRef(0);
   const wasAlignedRef = useRef(false); // Track previous alignment state
   const [completionResults, setCompletionResults] = useState(null);
+  const [screenFade, setScreenFade] = useState(0); // 0 = clear, 1 = black
+  const screenFadeRef = useRef(0);
+  const screenFadeTargetRef = useRef(0);
   const [interactPrompt, setInteractPrompt] = useState(null); // { name, inputHint }
   const [buttonVignette, setButtonVignette] = useState(0); // 0-1 intensity
   const buttonVignetteRef = useRef(0);
@@ -769,6 +776,8 @@ const WanderingMuseum = ({ onComplete }) => {
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: q.antialias });
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(q.pixelRatio);
     containerRef.current.appendChild(renderer.domElement);
@@ -994,6 +1003,32 @@ const WanderingMuseum = ({ onComplete }) => {
       tripShaderMaterial
     );
     tripScene.add(tripQuad);
+
+    // Bloom post-processing
+    const bloomComposer = new EffectComposer(renderer);
+    const bloomRenderPass = new RenderPass(scene, camera);
+    bloomComposer.addPass(bloomRenderPass);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.25, // strength
+      0.4,  // radius
+      0.9   // threshold
+    );
+    bloomComposer.addPass(bloomPass);
+    bloomComposer.addPass(new OutputPass());
+
+    // Trip bloom composer (renders trip quad through bloom)
+    const tripBloomComposer = new EffectComposer(renderer);
+    const tripBloomRenderPass = new RenderPass(tripScene, tripCamera);
+    tripBloomComposer.addPass(tripBloomRenderPass);
+    const tripBloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.25, 0.4, 0.9
+    );
+    tripBloomComposer.addPass(tripBloomPass);
+    tripBloomComposer.addPass(new OutputPass());
+
+    const useBloom = () => qualityRef.current !== 'low';
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
@@ -1607,6 +1642,23 @@ const WanderingMuseum = ({ onComplete }) => {
     };
     artPieces.push(tripButton);
 
+    // Ensure all art piece materials have consistent metallic sheen
+    artPieces.forEach(piece => {
+      const target = piece.artMesh || piece.mesh;
+      if (!target) return;
+      target.traverse(obj => {
+        if (!obj.material || !obj.material.isMeshStandardMaterial) return;
+        const mat = obj.material;
+        if (!mat.envMap) {
+          mat.envMap = envTexture;
+          mat.envMapIntensity = Math.max(mat.envMapIntensity || 0, 0.6);
+        }
+        mat.metalness = Math.max(mat.metalness, 0.6);
+        mat.roughness = Math.min(mat.roughness, 0.3);
+        mat.needsUpdate = true;
+      });
+    });
+
     // Trip Exit Portal - screen-space glow overlay (rendered in tripScene)
     // Portal shader renders a dynamic glow/vortex centered on screen
     const portalOverlayMaterial = new THREE.ShaderMaterial({
@@ -2010,14 +2062,19 @@ const WanderingMuseum = ({ onComplete }) => {
         viewsExplored,
         totalRotations: gameState.rotationsPerformed,
         completionMethod: gameState.completionMethod,
-        completionRatio: foundRegular / regularObjects
+        completionRatio: foundRegular / regularObjects,
+        totalTime
       };
 
       console.log('Game completed!', results);
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
-      setCompletionResults(results);
+      // Fade to black, then show results
+      screenFadeTargetRef.current = 1;
+      setTimeout(() => {
+        setCompletionResults(results);
+      }, 1500);
     };
 
     // Player setup
@@ -2054,6 +2111,7 @@ const WanderingMuseum = ({ onComplete }) => {
     const mouse = { x: 0, y: 0, isDragging: false };
     let yaw = 0;
     let pitch = 0;
+    let headBobPhase = 0;
     let pointerLocked = false;
     let pointerLockSupported = true;
     let skipNextClick = false;
@@ -2334,8 +2392,14 @@ const WanderingMuseum = ({ onComplete }) => {
           if (!mat) return;
           if (mat.emissive) {
             const orig = mat.emissive.getHex();
+            const origIntensity = mat.emissiveIntensity;
+            // Scale flash down for shiny objects so total brightness is consistent
+            // Highly metallic + low roughness + strong envMap = already bright
+            const envContrib = (mat.metalness || 0) * (1 - (mat.roughness || 0.5)) * (mat.envMapIntensity || 0);
+            const flashIntensity = Math.max(0.15, 0.6 - envContrib * 0.5);
             mat.emissive.set(0xffffff);
-            restores.push(() => mat.emissive.set(orig));
+            mat.emissiveIntensity = flashIntensity;
+            restores.push(() => { mat.emissive.set(orig); mat.emissiveIntensity = origIntensity; });
           } else if (mat.color) {
             const orig = mat.color.getHex();
             const hadVertexColors = mat.vertexColors;
@@ -2391,7 +2455,7 @@ const WanderingMuseum = ({ onComplete }) => {
         obj.material.depthWrite = false;
         if (obj.material.emissive) {
           obj.material.emissive.set(0xffffff);
-          obj.material.emissiveIntensity = 3.0;
+          obj.material.emissiveIntensity = 1.5;
         } else if (obj.material.color) {
           obj.material.color.set(0xffffff);
         }
@@ -2515,6 +2579,8 @@ const WanderingMuseum = ({ onComplete }) => {
       orthoCamera.updateProjectionMatrix();
       
       renderer.setSize(window.innerWidth, window.innerHeight);
+      bloomComposer.setSize(window.innerWidth, window.innerHeight);
+      tripBloomComposer.setSize(window.innerWidth, window.innerHeight);
       _resolution.set(window.innerWidth, window.innerHeight);
       portalOverlayMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
       tripShaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
@@ -2862,13 +2928,23 @@ const WanderingMuseum = ({ onComplete }) => {
         camera.position.z = newZ;
       }
       
-      // Apply Y movement
+      // Apply Y movement with head bob
       if (trippingRef.current) {
-        // Lock Y at ring height during trip
+        // Lock Y at ring height during trip — no bob
         camera.position.y = 2;
+        headBobPhase = 0;
       } else {
-        // Keep at ground level when not tripping
-        camera.position.y = 2;
+        // Detect walking: any horizontal movement this tick
+        const isWalking = Math.abs(moveX) > 0.001 || Math.abs(moveZ) > 0.001;
+        if (isWalking) {
+          headBobPhase += FIXED_DT * 4 * Math.PI; // 2 Hz — synced with footstep audio
+          camera.position.y = 2 + Math.sin(headBobPhase) * 0.03;
+        } else {
+          // Settle toward nearest multiple of PI so bob ends at y=2
+          const nearestPi = Math.round(headBobPhase / Math.PI) * Math.PI;
+          headBobPhase += (nearestPi - headBobPhase) * 0.1;
+          camera.position.y = 2 + Math.sin(headBobPhase) * 0.03;
+        }
       }
 
       // Constrain player within horizontal bounds
@@ -2975,7 +3051,7 @@ const WanderingMuseum = ({ onComplete }) => {
           buttonVignetteRef.current = Math.min(1, buttonVignetteRef.current + vizDelta * 0.4);
           setButtonVignette(buttonVignetteRef.current);
           if (hoveredPiece.buttonMesh) {
-            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 2.5;
+            hoveredPiece.buttonMesh.material.emissiveIntensity = 0.5 + buttonVignetteRef.current * 1.0;
           }
         } else {
           // Ramp oscillation amplitude up smoothly
@@ -3083,7 +3159,7 @@ const WanderingMuseum = ({ onComplete }) => {
               f.mesh.scale.copy(f._baseScale).multiplyScalar(scaleMult);
               f.mesh.traverse(obj => {
                 if (obj.material && obj.material.emissive) {
-                  obj.material.emissiveIntensity = 3.0 + 7.0 * t;
+                  obj.material.emissiveIntensity = 1.5 + 1.5 * t;
                 }
               });
             } else {
@@ -3093,7 +3169,7 @@ const WanderingMuseum = ({ onComplete }) => {
               f.mesh.scale.copy(f._baseScale).multiplyScalar(1.4 * shrink);
               f.mesh.traverse(obj => {
                 if (obj.material) {
-                  if (obj.material.emissive) obj.material.emissiveIntensity = 10.0 * (1.0 - t);
+                  if (obj.material.emissive) obj.material.emissiveIntensity = 3.0 * (1.0 - t);
                   obj.material.opacity = 1.0 - t;
                 }
               });
@@ -3317,6 +3393,17 @@ const WanderingMuseum = ({ onComplete }) => {
         tripShaderMaterial.uniforms.intensity.value = Math.max(0, tripShaderMaterial.uniforms.intensity.value - vizDelta * 2);
       }
 
+      // Animate screen fade
+      const fadeCurrent = screenFadeRef.current;
+      const fadeTarget = screenFadeTargetRef.current;
+      if (Math.abs(fadeCurrent - fadeTarget) > 0.001) {
+        screenFadeRef.current += (fadeTarget - fadeCurrent) * Math.min(1, vizDelta * 2);
+        setScreenFade(screenFadeRef.current);
+      }
+
+      // Update bloom render pass camera to match active camera
+      bloomRenderPass.camera = activeCamera;
+
       // Render with or without post-processing
       if (trippingRef.current || tripShaderMaterial.uniforms.intensity.value > 0.01) {
         // Render to texture
@@ -3326,7 +3413,12 @@ const WanderingMuseum = ({ onComplete }) => {
         // Apply post-processing
         tripShaderMaterial.uniforms.tDiffuse.value = renderTarget.texture;
         renderer.setRenderTarget(null);
-        renderer.render(tripScene, tripCamera);
+
+        if (useBloom()) {
+          tripBloomComposer.render();
+        } else {
+          renderer.render(tripScene, tripCamera);
+        }
 
         // Render floating objects on top of trip shader (separate scene)
         // Clear only depth buffer so floating objects aren't occluded by the fullscreen quad
@@ -3344,8 +3436,12 @@ const WanderingMuseum = ({ onComplete }) => {
           renderer.autoClear = true;
         }
       } else {
-        // Normal render
-        renderer.render(scene, activeCamera);
+        // Normal render (with or without bloom)
+        if (useBloom()) {
+          bloomComposer.render();
+        } else {
+          renderer.render(scene, activeCamera);
+        }
       }
       // Hide loading screen after first frame
       if (!firstFrameRendered) {
@@ -3435,6 +3531,17 @@ const WanderingMuseum = ({ onComplete }) => {
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#1a1a2e' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Screen fade overlay */}
+      {screenFade > 0.001 && (
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: `rgba(0,0,0,${screenFade})`,
+          pointerEvents: 'none',
+          zIndex: 150
+        }} />
+      )}
 
       {/* Loading screen */}
       {loading && (
@@ -3552,19 +3659,35 @@ const WanderingMuseum = ({ onComplete }) => {
       )}
 
       {/* Completion summary overlay */}
-      {completionResults && (
+      {completionResults && (() => {
+        const method = completionResults.completionMethod;
+        const headerColor = method === 'trip' ? '#00ffff'
+          : method === 'sober' ? '#ffcc44' : '#cccccc';
+        const headerShadow = method === 'trip'
+          ? '0 0 20px rgba(0,255,255,0.8), 0 0 40px rgba(0,255,255,0.4)'
+          : method === 'sober'
+          ? '0 0 20px rgba(255,204,68,0.6), 0 0 40px rgba(255,204,68,0.3)'
+          : 'none';
+        const minutes = Math.floor(completionResults.totalTime / 60);
+        const seconds = Math.floor(completionResults.totalTime % 60);
+        const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        const openPct = Math.round(completionResults.abstractnessLevel * 100);
+        const fadeInKeyframes = `@keyframes resultsFadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`;
+        return (
         <div style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.92)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 200
+          zIndex: 200,
+          animation: 'resultsBgFade 1.5s ease-out'
         }}>
+          <style>{fadeInKeyframes}{`
+            @keyframes resultsBgFade { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes openBarFill { from { width: 0%; } to { width: ${openPct}%; } }
+          `}</style>
           <div style={{
             color: 'white',
             textAlign: 'center',
@@ -3572,17 +3695,50 @@ const WanderingMuseum = ({ onComplete }) => {
             padding: '40px',
             fontFamily: 'system-ui, sans-serif'
           }}>
-            <h2 style={{ fontSize: '2rem', fontWeight: '300', marginBottom: '24px' }}>
-              {completionResults.completionMethod === 'trip' ? 'transcendence achieved'
-                : completionResults.completionMethod === 'sober' ? 'exhibition complete'
+            <h2 style={{
+              fontSize: '2rem',
+              fontWeight: '300',
+              marginBottom: '24px',
+              color: headerColor,
+              textShadow: headerShadow,
+              animation: 'resultsFadeIn 0.8s ease-out both',
+              animationDelay: '0.2s'
+            }}>
+              {method === 'trip' ? 'transcendence achieved'
+                : method === 'sober' ? 'exhibition complete'
                 : 'museum visited'}
             </h2>
-            <div style={{ opacity: 0.7, lineHeight: '2', fontSize: '15px', marginBottom: '30px' }}>
-              <div>Art pieces examined: {completionResults.uniqueDescriptions} / {totalArtRef.current}</div>
-              <div>Completion: {completionResults.completionMethod === 'trip' ? 'psychedelic portal'
-                : completionResults.completionMethod === 'sober' ? 'full gallery tour'
-                : 'early departure'}</div>
-              <div>Openness score: {Math.round(completionResults.abstractnessLevel * 100)}%</div>
+            <div style={{ lineHeight: '2.2', fontSize: '15px', marginBottom: '30px' }}>
+              <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '0.7s' }}>
+                Art pieces examined: {completionResults.uniqueDescriptions} / {totalArtRef.current}
+              </div>
+              <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '1.2s' }}>
+                Completion: {method === 'trip' ? 'psychedelic portal'
+                  : method === 'sober' ? 'full gallery tour'
+                  : 'early departure'}
+              </div>
+              <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '1.7s' }}>
+                Time played: {timeStr}
+              </div>
+              <div style={{ opacity: 0.8, animation: 'resultsFadeIn 0.6s ease-out both', animationDelay: '2.2s' }}>
+                <div style={{ marginBottom: '4px' }}>Openness: {openPct}%</div>
+                <div style={{
+                  width: '100%',
+                  height: '6px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '3px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${openPct}%`,
+                    background: `linear-gradient(90deg, ${headerColor}, ${method === 'trip' ? '#8855ff' : method === 'sober' ? '#ff8844' : '#888888'})`,
+                    borderRadius: '3px',
+                    animation: 'openBarFill 1s ease-out both',
+                    animationDelay: '2.4s'
+                  }} />
+                </div>
+              </div>
             </div>
             <button
               onClick={() => {
@@ -3598,14 +3754,18 @@ const WanderingMuseum = ({ onComplete }) => {
                 fontSize: '1rem',
                 fontWeight: '300',
                 cursor: 'pointer',
-                letterSpacing: '1px'
+                letterSpacing: '1px',
+                opacity: 0,
+                animation: 'resultsFadeIn 0.8s ease-out both',
+                animationDelay: '2.8s'
               }}
             >
               continue
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* UI overlay */}
       {!instructions && !completionResults && (
