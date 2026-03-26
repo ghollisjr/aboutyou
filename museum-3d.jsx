@@ -774,7 +774,7 @@ const WanderingMuseum = ({ onComplete }) => {
     // Three.js setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
-    scene.fog = new THREE.Fog(0x1a1a2e, 25, 65);
+    scene.fog = new THREE.Fog(0x1a1a2e, 25, 80);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: q.antialias });
@@ -1053,23 +1053,23 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.add(ambientLight);
 
     const pointLight1 = new THREE.PointLight(0xffffff, 1.5, 50);
-    pointLight1.position.set(0, 5, 0);
+    pointLight1.position.set(0, 5, 4);
     scene.add(pointLight1);
 
     const pointLight2 = new THREE.PointLight(0xffffff, 1.2, 40);
-    pointLight2.position.set(-10, 5, -10);
+    pointLight2.position.set(0, 5, 15);
     scene.add(pointLight2);
 
     const pointLight3 = new THREE.PointLight(0xffffff, 1.2, 40);
-    pointLight3.position.set(10, 5, 10);
+    pointLight3.position.set(-16, 5, 1);
     scene.add(pointLight3);
 
     const pointLight4 = new THREE.PointLight(0xffffff, 1.0, 40);
-    pointLight4.position.set(10, 5, -10);
+    pointLight4.position.set(16, 5, 1);
     scene.add(pointLight4);
 
     const pointLight5 = new THREE.PointLight(0xffffff, 1.0, 40);
-    pointLight5.position.set(-10, 5, 10);
+    pointLight5.position.set(-5, 5, -15);
     scene.add(pointLight5);
 
     // --- Procedural floor texture: polished stone tiles ---
@@ -1399,48 +1399,386 @@ const WanderingMuseum = ({ onComplete }) => {
       metalness: 0.05,
     });
 
+    // Collision arrays (populated automatically by createWall / createPedestal)
+    // walls: always block movement (outer boundary)
+    // interiorWallCollisions: skipped during trip mode
+    const walls = [];
+    const interiorWallCollisions = [];
+
+    // Wall factory: creates mesh, adds to scene, registers collision
+    const createWall = (w, d, x, z, collisions) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 6, d), wallMaterial);
+      mesh.position.set(x, 3, z);
+      scene.add(mesh);
+      collisions.push({ x, z, width: w, depth: d });
+      return mesh;
+    };
+
     // Main room walls
     // Back wall split into two segments with 6-unit gap for maze entrance
-    const wall1a = new THREE.Mesh(new THREE.BoxGeometry(18, 6, 0.5), wallMaterial);
-    wall1a.position.set(-11, 3, -20);
-    scene.add(wall1a);
+    const wall1a = createWall(18, 0.5, -11, -20, walls);
+    const wall1b = createWall(16, 0.5, 12, -20, walls);
+    const wall2 = createWall(40, 0.5, 0, 20, walls);
+    const wall3 = createWall(0.5, 40, -20, 0, walls);
+    const wall4 = createWall(0.5, 40, 20, 0, walls);
 
-    const wall1b = new THREE.Mesh(new THREE.BoxGeometry(16, 6, 0.5), wallMaterial);
-    wall1b.position.set(12, 3, -20);
-    scene.add(wall1b);
+    // --- Portal Room System ---
+    let currentRoomId = null;
+    const visitedPortals = new Set();
 
-    const wallGeometry = new THREE.BoxGeometry(40, 6, 0.5);
+    const portalRooms = [
+      { id: 'entry',      w: 14, d: 14, x: 0, y: 0, z: -100 },
+      { id: 'gyroid',     w: 16, d: 16, x: 0, y: 0, z: -200 },
+      { id: 'west',       w: 16, d: 18, x: 0, y: 0, z: -300 },
+      { id: 'east',       w: 16, d: 18, x: 0, y: 0, z: -400 },
+      { id: 'tesseract',  w: 16, d: 16, x: 0, y: 0, z: -500 },
+      { id: 'cinquefoil', w: 16, d: 16, x: 0, y: 0, z: -600 },
+      { id: 'fivecubes',  w: 16, d: 16, x: 0, y: 0, z: -700 },
+      { id: 'menger',     w: 16, d: 16, x: 0, y: 0, z: -800 },
+    ];
 
-    const wall2 = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall2.position.set(0, 3, 20);
-    scene.add(wall2);
+    // Portal connections: each portal links two rooms at specific walls
+    // wall: N=+z, S=-z, E=+x, W=-x
+    const portalConnections = [
+      // Entry connections
+      { from: 'entry', fromWall: 'S', to: 'gyroid',    toWall: 'N' },
+      { from: 'entry', fromWall: 'W', to: 'west',      toWall: 'N' },
+      { from: 'entry', fromWall: 'E', to: 'east',      toWall: 'N' },
+      // Gyroid connections (entry-N already covered above)
+      { from: 'gyroid', fromWall: 'S', to: 'tesseract', toWall: 'N' },
+      { from: 'gyroid', fromWall: 'W', to: 'west',      toWall: 'E' },
+      { from: 'gyroid', fromWall: 'E', to: 'east',      toWall: 'W' },
+      // West deeper
+      { from: 'west', fromWall: 'S', to: 'cinquefoil', toWall: 'N' },
+      // East deeper
+      { from: 'east', fromWall: 'S', to: 'fivecubes',  toWall: 'N' },
+      // Tesseract connections
+      { from: 'tesseract', fromWall: 'S', to: 'menger',     toWall: 'N' },
+      { from: 'tesseract', fromWall: 'W', to: 'cinquefoil', toWall: 'E' },
+      { from: 'tesseract', fromWall: 'E', to: 'fivecubes',  toWall: 'W' },
+      // Bottom row
+      { from: 'cinquefoil', fromWall: 'S', to: 'menger', toWall: 'W' },
+      { from: 'fivecubes',  fromWall: 'S', to: 'menger', toWall: 'E' },
+    ];
 
-    const wallGeometry2 = new THREE.BoxGeometry(0.5, 6, 40);
+    // Room lighting config
+    const roomLightConfig = {
+      entry:      { color: 0xffcc88, intensity: 0.8, range: 20 },
+      gyroid:     { color: 0x44aa88, intensity: 0.7, range: 22 },
+      west:       { color: 0xcc4422, intensity: 0.6, range: 22 },
+      east:       { color: 0x2266cc, intensity: 0.6, range: 22 },
+      tesseract:  { color: 0xffcc88, intensity: 0.7, range: 22 },
+      cinquefoil: { color: 0x44cc44, intensity: 0.6, range: 22 },
+      fivecubes:  { color: 0xcc44aa, intensity: 0.6, range: 22 },
+      menger:     { color: 0xddaa44, intensity: 0.6, range: 22 },
+    };
 
-    const wall3 = new THREE.Mesh(wallGeometry2, wallMaterial);
-    wall3.position.set(-20, 3, 0);
-    scene.add(wall3);
+    // Portal shader material
+    const portalVertexShader = /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const portalFragmentShader = /* glsl */ `
+      uniform float time;
+      uniform vec3 portalColor;
+      varying vec2 vUv;
+      void main() {
+        float swirl = sin(vUv.x * 6.28 + time * 2.0) * cos(vUv.y * 6.28 - time * 1.5);
+        float glow = 0.5 + 0.5 * swirl;
+        float edge = smoothstep(0.0, 0.15, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
+        gl_FragColor = vec4(portalColor * (0.3 + 0.7 * glow) * edge, 0.85);
+      }
+    `;
 
-    const wall4 = new THREE.Mesh(wallGeometry2, wallMaterial);
-    wall4.position.set(20, 3, 0);
-    scene.add(wall4);
+    // All portal objects for animation/teleport checking
+    const portalObjects = [];
+    // All room meshes for trip-mode visibility toggling
+    const portalRoomMeshes = [];
+    const portalRoomLights = [];
+
+    // Get wall position for a portal on a given room and wall side
+    const getPortalWallPos = (room, wall) => {
+      const hw = room.w / 2;
+      const hd = room.d / 2;
+      switch (wall) {
+        case 'N': return { x: room.x, z: room.z + hd, rotY: 0 };           // +z face, facing -z into room
+        case 'S': return { x: room.x, z: room.z - hd, rotY: Math.PI };     // -z face, facing +z into room
+        case 'E': return { x: room.x + hw, z: room.z, rotY: -Math.PI / 2 }; // +x face, facing -x into room
+        case 'W': return { x: room.x - hw, z: room.z, rotY: Math.PI / 2 };  // -x face, facing +x into room
+      }
+    };
+
+    // Inward direction from a wall (direction player faces after teleporting)
+    const getInwardDir = (wall) => {
+      // dx/dz point inward; yaw faces the same inward direction
+      // Three.js YXZ: yaw=0 → -Z, yaw=PI → +Z, yaw=PI/2 → -X, yaw=-PI/2 → +X
+      switch (wall) {
+        case 'N': return { dx: 0, dz: -1, yaw: 0 };            // arrived at +z wall, face -z
+        case 'S': return { dx: 0, dz: 1, yaw: Math.PI };       // arrived at -z wall, face +z
+        case 'E': return { dx: -1, dz: 0, yaw: Math.PI / 2 };  // arrived at +x wall, face -x
+        case 'W': return { dx: 1, dz: 0, yaw: -Math.PI / 2 };  // arrived at -x wall, face +x
+      }
+    };
+
+    // Build a portal room
+    const buildPortalRoom = (room) => {
+      const hw = room.w / 2;
+      const hd = room.d / 2;
+      const wallHeight = 6;
+
+      // Determine which walls have portals
+      const roomPortals = [];
+      for (const conn of portalConnections) {
+        if (conn.from === room.id) roomPortals.push({ wall: conn.fromWall, conn });
+        if (conn.to === room.id) roomPortals.push({ wall: conn.toWall, conn });
+      }
+      // Also check entrance portal for entry room
+      if (room.id === 'entry') roomPortals.push({ wall: 'N', isEntrance: true });
+
+      const portalWalls = new Set(roomPortals.map(p => p.wall));
+
+      // Floor
+      const roomFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(room.w, room.d),
+        floorMaterial
+      );
+      roomFloor.rotation.x = -Math.PI / 2;
+      roomFloor.position.set(room.x, 0, room.z);
+      scene.add(roomFloor);
+      portalRoomMeshes.push(roomFloor);
+
+      // Ceiling
+      const roomCeiling = new THREE.Mesh(
+        new THREE.PlaneGeometry(room.w, room.d),
+        ceilingMaterial
+      );
+      roomCeiling.rotation.x = Math.PI / 2;
+      roomCeiling.position.set(room.x, wallHeight, room.z);
+      scene.add(roomCeiling);
+      portalRoomMeshes.push(roomCeiling);
+
+      // Walls - each side, with gaps for portals
+      const wallDefs = [
+        { side: 'N', axis: 'x', pos: { x: room.x, z: room.z + hd }, len: room.w, isHoriz: true },
+        { side: 'S', axis: 'x', pos: { x: room.x, z: room.z - hd }, len: room.w, isHoriz: true },
+        { side: 'E', axis: 'z', pos: { x: room.x + hw, z: room.z }, len: room.d, isHoriz: false },
+        { side: 'W', axis: 'z', pos: { x: room.x - hw, z: room.z }, len: room.d, isHoriz: false },
+      ];
+
+      for (const wd of wallDefs) {
+        const hasPortal = portalWalls.has(wd.side);
+        const gapWidth = 4;
+
+        if (hasPortal) {
+          // Split wall into two segments around a 4-unit gap
+          const segLen = (wd.len - gapWidth) / 2;
+          if (segLen > 0.1) {
+            if (wd.isHoriz) {
+              // Horizontal wall (runs along x)
+              const leftX = wd.pos.x - wd.len / 2 + segLen / 2;
+              const rightX = wd.pos.x + wd.len / 2 - segLen / 2;
+              const m1 = createWall(segLen, 0.5, leftX, wd.pos.z, walls);
+              const m2 = createWall(segLen, 0.5, rightX, wd.pos.z, walls);
+              portalRoomMeshes.push(m1, m2);
+            } else {
+              // Vertical wall (runs along z)
+              const topZ = wd.pos.z + wd.len / 2 - segLen / 2;
+              const botZ = wd.pos.z - wd.len / 2 + segLen / 2;
+              const m1 = createWall(0.5, segLen, wd.pos.x, topZ, walls);
+              const m2 = createWall(0.5, segLen, wd.pos.x, botZ, walls);
+              portalRoomMeshes.push(m1, m2);
+            }
+          }
+        } else {
+          // Solid wall
+          if (wd.isHoriz) {
+            const m = createWall(wd.len, 0.5, wd.pos.x, wd.pos.z, walls);
+            portalRoomMeshes.push(m);
+          } else {
+            const m = createWall(0.5, wd.len, wd.pos.x, wd.pos.z, walls);
+            portalRoomMeshes.push(m);
+          }
+        }
+      }
+
+      // Room light
+      const lc = roomLightConfig[room.id];
+      const roomLight = new THREE.PointLight(lc.color, lc.intensity, lc.range);
+      roomLight.position.set(room.x, 4, room.z);
+      scene.add(roomLight);
+      portalRoomLights.push(roomLight);
+
+      // Create portal surfaces and trigger volumes for this room
+      for (const rp of roomPortals) {
+        const wp = getPortalWallPos(room, rp.wall);
+        const inward = getInwardDir(rp.wall);
+
+        // Generate a unique ID for this portal connection
+        let portalId;
+        if (rp.isEntrance) {
+          portalId = 'entrance';
+        } else {
+          const c = rp.conn;
+          portalId = c.from < c.to ? `${c.from}-${c.to}` : `${c.to}-${c.from}`;
+        }
+
+        // Portal surface (visual)
+        const portalMat = new THREE.ShaderMaterial({
+          vertexShader: portalVertexShader,
+          fragmentShader: portalFragmentShader,
+          uniforms: {
+            time: { value: 0 },
+            portalColor: { value: new THREE.Color(0x2266ff) }, // blue = unvisited
+          },
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+
+        const portalSurface = new THREE.Mesh(
+          new THREE.PlaneGeometry(3.5, 5),
+          portalMat
+        );
+        portalSurface.position.set(wp.x, 2.75, wp.z);
+        portalSurface.rotation.y = wp.rotY;
+        scene.add(portalSurface);
+        portalRoomMeshes.push(portalSurface);
+
+        // Emissive frame around portal
+        const frameMat = new THREE.MeshBasicMaterial({
+          color: 0x2266ff,
+          transparent: true,
+          opacity: 0.4,
+        });
+        const frameGroup = new THREE.Group();
+        // Top bar
+        const topBar = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), frameMat);
+        topBar.position.set(0, 2.75, 0);
+        frameGroup.add(topBar);
+        // Bottom bar
+        const botBar = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), frameMat);
+        botBar.position.set(0, -2.5, 0);
+        frameGroup.add(botBar);
+        // Left bar
+        const leftBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), frameMat);
+        leftBar.position.set(-2, 0.125, 0);
+        frameGroup.add(leftBar);
+        // Right bar
+        const rightBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), frameMat);
+        rightBar.position.set(2, 0.125, 0);
+        frameGroup.add(rightBar);
+        frameGroup.position.set(wp.x, 2.75, wp.z);
+        frameGroup.rotation.y = wp.rotY;
+        scene.add(frameGroup);
+        portalRoomMeshes.push(frameGroup);
+
+        // Trigger volume (invisible box extending inward from wall)
+        const triggerX = wp.x + inward.dx * 0.75;
+        const triggerZ = wp.z + inward.dz * 0.75;
+
+        portalObjects.push({
+          portalId,
+          roomId: room.id,
+          wall: rp.wall,
+          conn: rp.conn,
+          isEntrance: rp.isEntrance || false,
+          triggerX, triggerZ,
+          // half-extents: wide along the opening, narrow through the wall
+          triggerHW: (rp.wall === 'N' || rp.wall === 'S') ? 1.75 : 0.75,
+          triggerHD: (rp.wall === 'N' || rp.wall === 'S') ? 0.75 : 1.75,
+          // Teleport destination info will be resolved later
+          destRoomId: rp.isEntrance ? null : (rp.conn.from === room.id ? rp.conn.to : rp.conn.from),
+          destWall: rp.isEntrance ? null : (rp.conn.from === room.id ? rp.conn.toWall : rp.conn.fromWall),
+          material: portalMat,
+          frameMaterial: frameMat,
+          surface: portalSurface,
+          frame: frameGroup,
+        });
+      }
+    };
+
+    // Build all portal rooms
+    for (const room of portalRooms) {
+      buildPortalRoom(room);
+    }
+
+    // Build entrance portal in the wall1a/wall1b gap (z=-20)
+    const entrancePortalMat = new THREE.ShaderMaterial({
+      vertexShader: portalVertexShader,
+      fragmentShader: portalFragmentShader,
+      uniforms: {
+        time: { value: 0 },
+        portalColor: { value: new THREE.Color(0x2266ff) },
+      },
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const entrancePortalSurface = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 5),
+      entrancePortalMat
+    );
+    entrancePortalSurface.position.set(0, 2.75, -20);
+    scene.add(entrancePortalSurface);
+
+    const entranceFrameMat = new THREE.MeshBasicMaterial({
+      color: 0x2266ff, transparent: true, opacity: 0.4,
+    });
+    const entranceFrame = new THREE.Group();
+    const eTop = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), entranceFrameMat);
+    eTop.position.y = 2.75;
+    entranceFrame.add(eTop);
+    const eBot = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), entranceFrameMat);
+    eBot.position.y = -2.5;
+    entranceFrame.add(eBot);
+    const eLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), entranceFrameMat);
+    eLeft.position.x = -2;
+    eLeft.position.y = 0.125;
+    entranceFrame.add(eLeft);
+    const eRight = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), entranceFrameMat);
+    eRight.position.x = 2;
+    eRight.position.y = 0.125;
+    entranceFrame.add(eRight);
+    entranceFrame.position.set(0, 2.75, -20);
+    scene.add(entranceFrame);
+
+    // Entrance portal trigger (in main room, just before back wall)
+    portalObjects.push({
+      portalId: 'entrance',
+      roomId: null, // main museum
+      wall: 'S',
+      conn: null,
+      isEntrance: true,
+      isMainMuseumSide: true,
+      triggerX: 0, triggerZ: -19.25,
+      triggerHW: 1.5, triggerHD: 0.75,
+      destRoomId: 'entry',
+      destWall: 'N',
+      material: entrancePortalMat,
+      frameMaterial: entranceFrameMat,
+      surface: entrancePortalSurface,
+      frame: entranceFrame,
+    });
+
+    // Gallery subdivision walls
+    const foyerWallLeft = createWall(16, 0.5, -12, 10, interiorWallCollisions);
+    const foyerWallRight = createWall(16, 0.5, 12, 10, interiorWallCollisions);
+    const westWingWall = createWall(0.5, 12, -12, -1, interiorWallCollisions);
+    const eastNookWall = createWall(0.5, 12, 12, -1, interiorWallCollisions);
 
     // Collect outer walls for visibility control
-    const outerWalls = [wall1a, wall1b, wall2, wall3, wall4];
+    const outerWalls = [wall1a, wall1b, wall2, wall3, wall4, foyerWallLeft, foyerWallRight, westWingWall, eastNookWall];
 
-    // Create interior wall with opening (creates hidden area)
-    const interiorWallGeometry = new THREE.BoxGeometry(15, 6, 0.5);
-    const interiorWall1 = new THREE.Mesh(interiorWallGeometry, wallMaterial);
-    interiorWall1.position.set(-5, 3, -10);
-    scene.add(interiorWall1);
-
-    const interiorWall2 = new THREE.Mesh(interiorWallGeometry, wallMaterial);
-    interiorWall2.position.set(8, 3, -10);
-    scene.add(interiorWall2);
+    // Interior wall with opening (creates hidden area)
+    const interiorWall1 = createWall(15, 0.5, -5, -10, interiorWallCollisions);
+    const interiorWall2 = createWall(15, 0.5, 8, -10, interiorWallCollisions);
 
     // Warm glow from hidden room, visible through the gap in the interior wall
     const hiddenRoomGlow = new THREE.PointLight(0xffaa44, 2.0, 25);
-    hiddenRoomGlow.position.set(0, 3, -14);
+    hiddenRoomGlow.position.set(-5, 3, -14);
     scene.add(hiddenRoomGlow);
 
     // Procedural environment map for reflective surfaces (reveals curvature on smooth shapes)
@@ -1559,6 +1897,8 @@ const WanderingMuseum = ({ onComplete }) => {
       group.add(interactionBox);
 
       group.position.set(position.x, position.y, position.z);
+      // Auto-register collision (2x2 matches interaction box)
+      interiorWallCollisions.push({ x: position.x, z: position.z, width: 2, depth: 2 });
       return group;
     };
 
@@ -1571,7 +1911,7 @@ const WanderingMuseum = ({ onComplete }) => {
       envMapIntensity: 1.0
     });
     const teapotMesh = createTeapot(0.5, teapotMaterial);
-    const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-8, 0, -5));
+    const teapotPedestal = createPedestal('Utah Teapot', teapotMesh, new THREE.Vector3(-5, 0, 3));
     scene.add(teapotPedestal);
     artPieces.push({ mesh: teapotPedestal, artMesh: teapotMesh, id: 'teapot', examined: false, rotatable: true });
 
@@ -1597,7 +1937,7 @@ const WanderingMuseum = ({ onComplete }) => {
       new THREE.LineBasicMaterial({ color: 0xaaddff, linewidth: 1 })
     );
     icoMesh.add(icoEdges);
-    const icoPedestal = createPedestal('Icosahedron', icoMesh, new THREE.Vector3(8, 0, -5));
+    const icoPedestal = createPedestal('Icosahedron', icoMesh, new THREE.Vector3(5, 0, 3));
     scene.add(icoPedestal);
     artPieces.push({ mesh: icoPedestal, artMesh: icoMesh, id: 'icosahedron', examined: false, rotatable: true });
 
@@ -1620,7 +1960,7 @@ const WanderingMuseum = ({ onComplete }) => {
       new THREE.LineBasicMaterial({ color: 0x88ffcc, linewidth: 1 })
     );
     dodecMesh.add(dodecEdges);
-    const dodecPedestal = createPedestal('Dodecahedron', dodecMesh, new THREE.Vector3(-10, 0, 5));
+    const dodecPedestal = createPedestal('Dodecahedron', dodecMesh, new THREE.Vector3(-16, 0, 1));
     scene.add(dodecPedestal);
     artPieces.push({ mesh: dodecPedestal, artMesh: dodecMesh, id: 'dodecahedron', examined: false, rotatable: true });
 
@@ -1639,7 +1979,7 @@ const WanderingMuseum = ({ onComplete }) => {
         envMapIntensity: 0.8
       })
     );
-    const mobiusPedestal = createPedestal('Möbius Strip', mobiusMesh, new THREE.Vector3(10, 0, 5));
+    const mobiusPedestal = createPedestal('Möbius Strip', mobiusMesh, new THREE.Vector3(16, 0, 1));
     scene.add(mobiusPedestal);
     artPieces.push({ mesh: mobiusPedestal, artMesh: mobiusMesh, id: 'mobius', examined: false, rotatable: true });
 
@@ -1661,7 +2001,7 @@ const WanderingMuseum = ({ onComplete }) => {
         depthWrite: false
       })
     );
-    const kleinPedestal = createPedestal('Klein Bottle', kleinMesh, new THREE.Vector3(0, 0, -15));
+    const kleinPedestal = createPedestal('Klein Bottle', kleinMesh, new THREE.Vector3(-5, 0, -15));
     scene.add(kleinPedestal);
     artPieces.push({ mesh: kleinPedestal, artMesh: kleinMesh, id: 'klein', examined: false, rotatable: true, isHidden: true });
 
@@ -1669,13 +2009,13 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // M1: Sierpinski Tetrahedron — Room 1 west alcove
     const sierpinskiMesh = createSierpinskiTetrahedron(q.sierpinskiLevel, 0.9);
-    const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-15, 0, -27.5));
+    const sierpinskiPedestal = createPedestal('Sierpinski Tetrahedron', sierpinskiMesh, new THREE.Vector3(-3, 0, -297));
     scene.add(sierpinskiPedestal);
     artPieces.push({ mesh: sierpinskiPedestal, artMesh: sierpinskiMesh, id: 'sierpinski', examined: false, rotatable: true, isHidden: true });
 
     // M2: Lorenz Attractor — Room 2 east alcove
     const lorenzMesh = createLorenzAttractor();
-    const lorenzPedestal = createPedestal('Lorenz Attractor', lorenzMesh, new THREE.Vector3(15, 0, -27.5));
+    const lorenzPedestal = createPedestal('Lorenz Attractor', lorenzMesh, new THREE.Vector3(-3, 0, -397));
     scene.add(lorenzPedestal);
     artPieces.push({ mesh: lorenzPedestal, artMesh: lorenzMesh, id: 'lorenz', examined: false, rotatable: true, isHidden: true });
 
@@ -1683,7 +2023,7 @@ const WanderingMuseum = ({ onComplete }) => {
     const gyroidMesh = createGyroid(0.8, q.gyroidResolution);
     gyroidMesh.material.envMap = envTexture;
     gyroidMesh.material.envMapIntensity = 0.6;
-    const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(-6, 0, -27.5));
+    const gyroidPedestal = createPedestal('Gyroid Surface', gyroidMesh, new THREE.Vector3(0, 0, -200));
     scene.add(gyroidPedestal);
     artPieces.push({ mesh: gyroidPedestal, artMesh: gyroidMesh, id: 'gyroid', examined: false, rotatable: true, isHidden: true });
 
@@ -1691,13 +2031,13 @@ const WanderingMuseum = ({ onComplete }) => {
     const tesseractMesh = createTesseract(0.55);
     tesseractMesh.userData.skipWireframe = true;
     tesseractMesh.userData.bottomExtent = 1.20; // numerically computed worst-case during 4D rotation
-    const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(1, 0, -34.5));
+    const tesseractPedestal = createPedestal('Tesseract', tesseractMesh, new THREE.Vector3(0, 0, -500));
     scene.add(tesseractPedestal);
     artPieces.push({ mesh: tesseractPedestal, artMesh: tesseractMesh, id: 'tesseract', examined: false, rotatable: true, isHidden: true });
 
     // M5: Stella Octangula — deep west room
     const stellaMesh = createStellaOctangula(0.8);
-    const stellaPedestal = createPedestal('Stella Octangula', stellaMesh, new THREE.Vector3(-12, 0, -35));
+    const stellaPedestal = createPedestal('Stella Octangula', stellaMesh, new THREE.Vector3(3, 0, -303));
     scene.add(stellaPedestal);
     artPieces.push({ mesh: stellaPedestal, artMesh: stellaMesh, id: 'stella', examined: false, rotatable: true, isHidden: true });
 
@@ -1705,19 +2045,19 @@ const WanderingMuseum = ({ onComplete }) => {
     const cinquefoilMesh = createCinquefoilKnot(q.trefoilTubular, q.trefoilRadial);
     cinquefoilMesh.material.envMap = envTexture;
     cinquefoilMesh.material.envMapIntensity = 1.0;
-    const cinquefoilPedestal = createPedestal('Cinquefoil Knot', cinquefoilMesh, new THREE.Vector3(-12, 0, -42));
+    const cinquefoilPedestal = createPedestal('Cinquefoil Knot', cinquefoilMesh, new THREE.Vector3(0, 0, -600));
     scene.add(cinquefoilPedestal);
     artPieces.push({ mesh: cinquefoilPedestal, artMesh: cinquefoilMesh, id: 'cinquefoil', examined: false, rotatable: true, isHidden: true });
 
     // M7: Menger Sponge — deep east room
     const mengerMesh = createMengerSponge(q.mengerLevel, 1.2);
-    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(1, 0, -42));
+    const mengerPedestal = createPedestal('Menger Sponge', mengerMesh, new THREE.Vector3(0, 0, -800));
     scene.add(mengerPedestal);
     artPieces.push({ mesh: mengerPedestal, artMesh: mengerMesh, id: 'menger', examined: false, rotatable: true, isHidden: true });
 
     // M8: Compound of 5 Cubes — deep east alcove south
     const fivecubesMesh = createFiveCubes(0.7);
-    const fivecubesPedestal = createPedestal('Compound of 5 Cubes', fivecubesMesh, new THREE.Vector3(13, 0, -42));
+    const fivecubesPedestal = createPedestal('Compound of 5 Cubes', fivecubesMesh, new THREE.Vector3(0, 0, -700));
     scene.add(fivecubesPedestal);
     artPieces.push({ mesh: fivecubesPedestal, artMesh: fivecubesMesh, id: 'fivecubes', examined: false, rotatable: true, isHidden: true });
 
@@ -1740,7 +2080,7 @@ const WanderingMuseum = ({ onComplete }) => {
       new THREE.LineBasicMaterial({ color: 0xffcc88 })
     );
     octaMesh.add(octaEdges);
-    const octaPedestal = createPedestal('Octahedron', octaMesh, new THREE.Vector3(13, 0, -35));
+    const octaPedestal = createPedestal('Octahedron', octaMesh, new THREE.Vector3(3, 0, -403));
     scene.add(octaPedestal);
     artPieces.push({ mesh: octaPedestal, artMesh: octaMesh, id: 'octahedron', examined: false, rotatable: true, isHidden: true });
 
@@ -1755,7 +2095,7 @@ const WanderingMuseum = ({ onComplete }) => {
         envMapIntensity: 1.2
       })
     );
-    const torusKnotPedestal = createPedestal('Trefoil Knot', torusKnotMesh, new THREE.Vector3(0, 0, 8));
+    const torusKnotPedestal = createPedestal('Trefoil Knot', torusKnotMesh, new THREE.Vector3(0, 0, 5));
     scene.add(torusKnotPedestal);
     artPieces.push({ mesh: torusKnotPedestal, artMesh: torusKnotMesh, id: 'trefoil', examined: false, rotatable: true });
 
@@ -1837,8 +2177,9 @@ const WanderingMuseum = ({ onComplete }) => {
     // Pulsing animation for button
     let buttonPulseTime = 0;
 
-    tableGroup.position.set(0, 0, 19);
+    tableGroup.position.set(3, 0, 18.5);
     scene.add(tableGroup);
+    interiorWallCollisions.push({ x: 3, z: 18.5, width: 2, depth: 2 });
     
     // Add button to interactable objects
     const tripButton = { 
@@ -2035,147 +2376,6 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // Store total regular art piece count for UI
     totalArtRef.current = artPieces.filter(p => !p.isButton && !p.isTripExit).length;
-
-    // Collision boxes for walls (x, z, width, depth)
-    const walls = [
-      // Outer walls (back wall split for maze entrance gap at X=[-2, 4])
-      { x: -11, z: -20, width: 18, depth: 0.5 },  // Back wall left
-      { x: 12, z: -20, width: 16, depth: 0.5 },   // Back wall right
-      { x: 0, z: 20, width: 40, depth: 0.5 },     // South wall
-      { x: -20, z: 0, width: 0.5, depth: 40 },    // West wall
-      { x: 20, z: 0, width: 0.5, depth: 40 },     // East wall
-    ];
-    
-    const interiorWallCollisions = [
-      { x: -5, z: -10, width: 15, depth: 0.5 },   // Interior wall left section
-      { x: 8, z: -10, width: 15, depth: 0.5 }     // Interior wall right section
-    ];
-
-    // Add collision boxes for pedestals and trip button table
-    artPieces.forEach(piece => {
-      if (piece.isTripExit) return;
-      const pos = piece.mesh.position;
-      // Pedestal base is 1.8x1.8, table is 1.5x1.5 — use 2x2 to match interaction box
-      interiorWallCollisions.push({ x: pos.x, z: pos.z, width: 2, depth: 2 });
-    });
-
-    // --- Maze beyond back wall (Z < -20) ---
-    // Entry gap in back wall: X=[-2, 4] (6 units wide)
-    // Maze extends from Z=-20 to Z=-46, X=-20 to X=20
-    const mazeWallDefs = [
-      // Entry corridor (6 wide, 4 deep)
-      { w: 0.5, d: 4, x: -2, z: -22 },               // W1: entry left wall
-      { w: 0.5, d: 4, x: 4, z: -22 },                // W2: entry right wall
-      // T-junction north wall (gap aligned with entry)
-      { w: 18, d: 0.5, x: -11, z: -24 },             // W3: T north west, X=[-20,-2]
-      { w: 16, d: 0.5, x: 12, z: -24 },              // W4: T north east, X=[4,20]
-      // Maze perimeter
-      { w: 0.5, d: 22, x: -20, z: -35 },             // W5: west boundary, Z=[-46,-24]
-      { w: 0.5, d: 22, x: 20, z: -35 },              // W6: east boundary, Z=[-46,-24]
-      { w: 40, d: 0.5, x: 0, z: -46 },               // W7: south boundary
-      // Room dividers (partial walls, 3 units deep, gap at south)
-      { w: 0.5, d: 3, x: -10, z: -25.5 },            // W8: Room 1 divider, Z=[-27,-24]
-      { w: 0.5, d: 3, x: 10, z: -25.5 },             // W9: Room 2 divider, Z=[-27,-24]
-      // South wall of main corridor (gaps between segments)
-      { w: 8, d: 0.5, x: -16, z: -31 },              // W10: far west, X=[-20,-12]
-      { w: 8, d: 0.5, x: 16, z: -31 },               // W11: far east, X=[12,20]
-      // Deep section dividers (partial, gap at south Z=-38 to -46)
-      { w: 0.5, d: 7, x: -3, z: -34.5 },             // W12: deep west/center, Z=[-38,-31]
-      { w: 0.5, d: 7, x: 5, z: -34.5 },              // W13: center/deep east, Z=[-38,-31]
-      // Deep room cross-walls (alcoves for deepest pieces)
-      { w: 6, d: 0.5, x: -12, z: -38 },              // W14: Room 3 alcove, X=[-15,-9]
-      { w: 6, d: 0.5, x: 13, z: -38 },               // W15: Room 4 alcove, X=[10,16]
-    ];
-
-    const mazeWalls = [];
-    mazeWallDefs.forEach(def => {
-      const geom = new THREE.BoxGeometry(def.w, 6, def.d);
-      const mesh = new THREE.Mesh(geom, wallMaterial);
-      mesh.position.set(def.x, 3, def.z);
-      scene.add(mesh);
-      mazeWalls.push(mesh);
-      interiorWallCollisions.push({ x: def.x, z: def.z, width: def.w, depth: def.d });
-    });
-
-    // Maze floor and ceiling
-    const mazeFloor = new THREE.Mesh(
-      new THREE.PlaneGeometry(40, 26),
-      floorMaterial
-    );
-    mazeFloor.rotation.x = -Math.PI / 2;
-    mazeFloor.position.set(0, 0, -33);
-    scene.add(mazeFloor);
-
-    const mazeCeiling = new THREE.Mesh(
-      new THREE.PlaneGeometry(40, 26),
-      ceilingMaterial
-    );
-    mazeCeiling.rotation.x = Math.PI / 2;
-    mazeCeiling.position.set(0, 6, -33);
-    scene.add(mazeCeiling);
-
-    // --- Maze Lighting ---
-    const mazeLights = [];
-
-    // Entry corridor
-    const mazeLight1 = new THREE.PointLight(0xffcc88, 0.8, 15);
-    mazeLight1.position.set(1, 4, -22);
-    scene.add(mazeLight1);
-    mazeLights.push(mazeLight1);
-
-    // Main corridor west
-    const mazeLight2 = new THREE.PointLight(0xffcc88, 0.8, 18);
-    mazeLight2.position.set(-6, 4, -27.5);
-    scene.add(mazeLight2);
-    mazeLights.push(mazeLight2);
-
-    // Main corridor east
-    const mazeLight3 = new THREE.PointLight(0xffcc88, 0.8, 18);
-    mazeLight3.position.set(7, 4, -27.5);
-    scene.add(mazeLight3);
-    mazeLights.push(mazeLight3);
-
-    // Room 1 (west alcove): red/orange
-    const mazeLight4 = new THREE.PointLight(0xff6644, 0.6, 12);
-    mazeLight4.position.set(-15, 4, -27.5);
-    scene.add(mazeLight4);
-    mazeLights.push(mazeLight4);
-
-    // Room 2 (east alcove): cool blue
-    const mazeLight5 = new THREE.PointLight(0x4488ff, 0.6, 12);
-    mazeLight5.position.set(15, 4, -27.5);
-    scene.add(mazeLight5);
-    mazeLights.push(mazeLight5);
-
-    // Deep west: dim green
-    const mazeLight6 = new THREE.PointLight(0x44cc44, 0.5, 12);
-    mazeLight6.position.set(-12, 4, -35);
-    scene.add(mazeLight6);
-    mazeLights.push(mazeLight6);
-
-    // Deep east: dim purple
-    const mazeLight7 = new THREE.PointLight(0x8844cc, 0.5, 12);
-    mazeLight7.position.set(13, 4, -35);
-    scene.add(mazeLight7);
-    mazeLights.push(mazeLight7);
-
-    // Center deep: cold blue
-    const mazeLight8 = new THREE.PointLight(0x4466aa, 0.5, 12);
-    mazeLight8.position.set(1, 4, -40);
-    scene.add(mazeLight8);
-    mazeLights.push(mazeLight8);
-
-    // Deep south west alcove
-    const mazeLight9 = new THREE.PointLight(0xffaa66, 0.4, 10);
-    mazeLight9.position.set(-12, 4, -42);
-    scene.add(mazeLight9);
-    mazeLights.push(mazeLight9);
-
-    // Deep south east alcove
-    const mazeLight10 = new THREE.PointLight(0xffaa66, 0.4, 10);
-    mazeLight10.position.set(13, 4, -42);
-    scene.add(mazeLight10);
-    mazeLights.push(mazeLight10);
 
     // Collision detection helper
     const checkCollision = (newX, newZ, radius = 0.5) => {
@@ -3287,19 +3487,89 @@ const WanderingMuseum = ({ onComplete }) => {
       }
 
       // Constrain player within horizontal bounds
-      // When tripping, keep player in main room only (no maze access)
       if (trippingRef.current) {
         camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
         camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
+      } else if (currentRoomId) {
+        const room = portalRooms.find(r => r.id === currentRoomId);
+        const hw = room.w / 2 - 0.5, hd = room.d / 2 - 0.5;
+        camera.position.x = Math.max(room.x - hw, Math.min(room.x + hw, camera.position.x));
+        camera.position.z = Math.max(room.z - hd, Math.min(room.z + hd, camera.position.z));
       } else {
         camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
-        camera.position.z = Math.max(-45.5, Math.min(19, camera.position.z));
+        camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
+      }
+
+      // Portal teleport check
+      if (!trippingRef.current) {
+        for (const portal of portalObjects) {
+          const px = camera.position.x - portal.triggerX;
+          const pz = camera.position.z - portal.triggerZ;
+          if (Math.abs(px) < portal.triggerHW && Math.abs(pz) < portal.triggerHD) {
+            // Determine destination
+            let destRoomId = portal.destRoomId;
+            let destWall = portal.destWall;
+
+            // Special case: returning from entry room to main museum
+            if (portal.isEntrance && portal.roomId === 'entry') {
+              currentRoomId = null;
+              camera.position.set(0, 2, -19);
+              yaw = Math.PI; // face south
+              camera.rotation.y = yaw;
+              // Mark visited
+              visitedPortals.add('entrance');
+              break;
+            }
+
+            if (!destRoomId) continue;
+
+            // Find destination room
+            const destRoom = portalRooms.find(r => r.id === destRoomId);
+            if (!destRoom) continue;
+
+            // Calculate arrival position: 2 units inward from destination wall
+            const inward = getInwardDir(destWall);
+            const wp = getPortalWallPos(destRoom, destWall);
+            camera.position.x = wp.x + inward.dx * 2;
+            camera.position.y = 2;
+            camera.position.z = wp.z + inward.dz * 2;
+            yaw = inward.yaw;
+            camera.rotation.y = yaw;
+
+            currentRoomId = destRoomId;
+
+            // Mark portal visited (both directions turn red)
+            visitedPortals.add(portal.portalId);
+
+            // Update colors for all portal objects with this ID
+            for (const p of portalObjects) {
+              if (visitedPortals.has(p.portalId)) {
+                p.material.uniforms.portalColor.value.setHex(0xff2244);
+                p.frameMaterial.color.setHex(0xff2244);
+              }
+            }
+            // Also update entrance portal if visited
+            if (visitedPortals.has('entrance')) {
+              entrancePortalMat.uniforms.portalColor.value.setHex(0xff2244);
+              entranceFrameMat.color.setHex(0xff2244);
+            }
+
+            break;
+          }
+        }
       }
 
       } // end fixed-timestep simulation loop
 
       // Visual delta for animations outside the sim loop (adapts to actual display refresh rate)
       const vizDelta = Math.min(rawDelta, 0.1);
+
+      // Update portal shader time uniforms
+      const portalTime = currentTime / 1000;
+      for (const p of portalObjects) {
+        p.material.uniforms.time.value = portalTime;
+      }
+      entrancePortalMat.uniforms.time.value = portalTime;
 
       // Button cinematic: smoothly lerp camera to look at button and slide closer
       if (buttonCinematicActive) {
@@ -3471,10 +3741,10 @@ const WanderingMuseum = ({ onComplete }) => {
         // Hide interior walls completely (they block the circles)
         interiorWall1.visible = false;
         interiorWall2.visible = false;
-        mazeWalls.forEach(w => w.visible = false);
-        mazeLights.forEach(l => l.visible = false);
-        mazeFloor.visible = false;
-        mazeCeiling.visible = false;
+        portalRoomMeshes.forEach(m => m.visible = false);
+        portalRoomLights.forEach(l => l.visible = false);
+        entrancePortalSurface.visible = false;
+        entranceFrame.visible = false;
 
         // Hide floor
         floor.visible = false;
@@ -3664,10 +3934,10 @@ const WanderingMuseum = ({ onComplete }) => {
         // Show interior walls
         interiorWall1.visible = true;
         interiorWall2.visible = true;
-        mazeWalls.forEach(w => w.visible = true);
-        mazeLights.forEach(l => l.visible = true);
-        mazeFloor.visible = true;
-        mazeCeiling.visible = true;
+        portalRoomMeshes.forEach(m => m.visible = true);
+        portalRoomLights.forEach(l => l.visible = true);
+        entrancePortalSurface.visible = true;
+        entranceFrame.visible = true;
 
         // Show floor
         floor.visible = true;
