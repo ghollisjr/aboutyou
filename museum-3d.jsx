@@ -1476,20 +1476,50 @@ const WanderingMuseum = ({ onComplete }) => {
     // Portal shader material
     const portalVertexShader = /* glsl */ `
       varying vec2 vUv;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
       void main() {
         vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vWorldPos = worldPos.xyz;
+        vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `;
     const portalFragmentShader = /* glsl */ `
       uniform float time;
       uniform vec3 portalColor;
       varying vec2 vUv;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
       void main() {
-        float swirl = sin(vUv.x * 6.28 + time * 2.0) * cos(vUv.y * 6.28 - time * 1.5);
-        float glow = 0.5 + 0.5 * swirl;
-        float edge = smoothstep(0.0, 0.15, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
-        gl_FragColor = vec4(portalColor * (0.3 + 0.7 * glow) * edge, 0.85);
+        // View direction
+        vec3 viewDir = normalize(vWorldPos - cameraPosition);
+        // Fake reflection
+        vec3 refl = reflect(viewDir, vWorldNormal);
+
+        // Animated ripple distortion on reflection UV
+        vec2 reflUV = refl.xy * 0.5 + 0.5;
+        reflUV.x += 0.03 * sin(reflUV.y * 12.0 + time * 1.8);
+        reflUV.y += 0.03 * cos(reflUV.x * 10.0 + time * 1.4);
+
+        // Gradient bands simulating environment reflections
+        float band1 = smoothstep(0.0, 0.08, abs(sin(reflUV.y * 8.0 + time * 0.5)));
+        float band2 = smoothstep(0.0, 0.12, abs(cos(reflUV.x * 6.0 - time * 0.7)));
+        float bands = mix(0.25, 1.0, band1 * band2);
+
+        // Fresnel-like edge brightening
+        float fresnel = pow(1.0 - abs(dot(-viewDir, vWorldNormal)), 3.0);
+
+        // Base mercury mirror color
+        vec3 mirror = vec3(0.85, 0.88, 0.92) * bands;
+        mirror += vec3(0.3) * fresnel;
+
+        // Tint by portal color
+        vec3 col = mix(mirror, portalColor, 0.35);
+        col += portalColor * 0.15 * fresnel;
+
+        gl_FragColor = vec4(col, 1.0);
       }
     `;
 
@@ -1633,47 +1663,17 @@ const WanderingMuseum = ({ onComplete }) => {
             time: { value: 0 },
             portalColor: { value: new THREE.Color(0x2266ff) }, // blue = unvisited
           },
-          transparent: true,
           side: THREE.DoubleSide,
-          depthWrite: false,
         });
 
         const portalSurface = new THREE.Mesh(
-          new THREE.PlaneGeometry(3.5, 5),
+          new THREE.PlaneGeometry(4, 5.75),
           portalMat
         );
-        portalSurface.position.set(wp.x, 2.75, wp.z);
+        portalSurface.position.set(wp.x, 2.875, wp.z);
         portalSurface.rotation.y = wp.rotY;
         scene.add(portalSurface);
         portalRoomMeshes.push(portalSurface);
-
-        // Emissive frame around portal
-        const frameMat = new THREE.MeshBasicMaterial({
-          color: 0x2266ff,
-          transparent: true,
-          opacity: 0.4,
-        });
-        const frameGroup = new THREE.Group();
-        // Top bar
-        const topBar = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), frameMat);
-        topBar.position.set(0, 2.75, 0);
-        frameGroup.add(topBar);
-        // Bottom bar
-        const botBar = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), frameMat);
-        botBar.position.set(0, -2.5, 0);
-        frameGroup.add(botBar);
-        // Left bar
-        const leftBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), frameMat);
-        leftBar.position.set(-2, 0.125, 0);
-        frameGroup.add(leftBar);
-        // Right bar
-        const rightBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), frameMat);
-        rightBar.position.set(2, 0.125, 0);
-        frameGroup.add(rightBar);
-        frameGroup.position.set(wp.x, 2.75, wp.z);
-        frameGroup.rotation.y = wp.rotY;
-        scene.add(frameGroup);
-        portalRoomMeshes.push(frameGroup);
 
         // Trigger volume (invisible box extending inward from wall)
         const triggerX = wp.x + inward.dx * 0.75;
@@ -1693,9 +1693,7 @@ const WanderingMuseum = ({ onComplete }) => {
           destRoomId: rp.isEntrance ? null : (rp.conn.from === room.id ? rp.conn.to : rp.conn.from),
           destWall: rp.isEntrance ? null : (rp.conn.from === room.id ? rp.conn.toWall : rp.conn.fromWall),
           material: portalMat,
-          frameMaterial: frameMat,
           surface: portalSurface,
-          frame: frameGroup,
         });
       }
     };
@@ -1713,37 +1711,14 @@ const WanderingMuseum = ({ onComplete }) => {
         time: { value: 0 },
         portalColor: { value: new THREE.Color(0x2266ff) },
       },
-      transparent: true,
       side: THREE.DoubleSide,
-      depthWrite: false,
     });
     const entrancePortalSurface = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.5, 5),
+      new THREE.PlaneGeometry(6, 5.75),
       entrancePortalMat
     );
-    entrancePortalSurface.position.set(0, 2.75, -20);
+    entrancePortalSurface.position.set(1, 2.875, -20);
     scene.add(entrancePortalSurface);
-
-    const entranceFrameMat = new THREE.MeshBasicMaterial({
-      color: 0x2266ff, transparent: true, opacity: 0.4,
-    });
-    const entranceFrame = new THREE.Group();
-    const eTop = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), entranceFrameMat);
-    eTop.position.y = 2.75;
-    entranceFrame.add(eTop);
-    const eBot = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), entranceFrameMat);
-    eBot.position.y = -2.5;
-    entranceFrame.add(eBot);
-    const eLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), entranceFrameMat);
-    eLeft.position.x = -2;
-    eLeft.position.y = 0.125;
-    entranceFrame.add(eLeft);
-    const eRight = new THREE.Mesh(new THREE.BoxGeometry(0.15, 5.5, 0.15), entranceFrameMat);
-    eRight.position.x = 2;
-    eRight.position.y = 0.125;
-    entranceFrame.add(eRight);
-    entranceFrame.position.set(0, 2.75, -20);
-    scene.add(entranceFrame);
 
     // Entrance portal trigger (in main room, just before back wall)
     portalObjects.push({
@@ -1758,9 +1733,7 @@ const WanderingMuseum = ({ onComplete }) => {
       destRoomId: 'entry',
       destWall: 'N',
       material: entrancePortalMat,
-      frameMaterial: entranceFrameMat,
       surface: entrancePortalSurface,
-      frame: entranceFrame,
     });
 
     // Gallery subdivision walls
@@ -3545,13 +3518,11 @@ const WanderingMuseum = ({ onComplete }) => {
             for (const p of portalObjects) {
               if (visitedPortals.has(p.portalId)) {
                 p.material.uniforms.portalColor.value.setHex(0xff2244);
-                p.frameMaterial.color.setHex(0xff2244);
               }
             }
             // Also update entrance portal if visited
             if (visitedPortals.has('entrance')) {
               entrancePortalMat.uniforms.portalColor.value.setHex(0xff2244);
-              entranceFrameMat.color.setHex(0xff2244);
             }
 
             break;
@@ -3744,7 +3715,6 @@ const WanderingMuseum = ({ onComplete }) => {
         portalRoomMeshes.forEach(m => m.visible = false);
         portalRoomLights.forEach(l => l.visible = false);
         entrancePortalSurface.visible = false;
-        entranceFrame.visible = false;
 
         // Hide floor
         floor.visible = false;
@@ -3937,7 +3907,6 @@ const WanderingMuseum = ({ onComplete }) => {
         portalRoomMeshes.forEach(m => m.visible = true);
         portalRoomLights.forEach(l => l.visible = true);
         entrancePortalSurface.visible = true;
-        entranceFrame.visible = true;
 
         // Show floor
         floor.visible = true;
