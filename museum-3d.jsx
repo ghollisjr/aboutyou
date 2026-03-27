@@ -776,7 +776,7 @@ const WanderingMuseum = ({ onComplete }) => {
     scene.background = new THREE.Color(0x1a1a2e);
     scene.fog = new THREE.Fog(0x1a1a2e, 25, 80);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1200);
     const renderer = new THREE.WebGLRenderer({ antialias: q.antialias });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -1353,6 +1353,232 @@ const WanderingMuseum = ({ onComplete }) => {
     ceiling.position.y = 6;
     scene.add(ceiling);
 
+    // --- Space skybox sphere (inverted, visible on music drop) ---
+    const skyboxGeometry = new THREE.SphereGeometry(900, 32, 24);
+    const skyboxMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0.0 }
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vPos;
+        void main() {
+          vPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform float uTime;
+        varying vec3 vPos;
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+        vec2 hash22(vec2 p) {
+          float n = hash21(p);
+          return vec2(n, hash21(p + n));
+        }
+        float starLayer(vec2 uv, float scale, float seed) {
+          vec2 gv = fract(uv * scale) - 0.5;
+          vec2 id = floor(uv * scale);
+          float d = length(gv - (hash22(id + seed) - 0.5) * 0.7);
+          float brightness = hash21(id + seed + 77.0);
+          float starMask = step(0.75, brightness);
+          float twinkle = sin(uTime * (1.0 + brightness * 2.5) + brightness * 6.28) * 0.5 + 0.5;
+          float size = mix(0.008, 0.03, brightness);
+          float star = smoothstep(size, size * 0.1, d) * starMask;
+          star *= mix(0.3, 1.2, brightness) * mix(0.5, 1.0, twinkle);
+          return star;
+        }
+        void main() {
+          vec3 dir = normalize(vPos);
+          float theta = acos(dir.y);
+          float phi = atan(dir.z, dir.x);
+          vec2 uv = vec2(phi / 6.2832, theta / 3.1416);
+          float stars = 0.0;
+          stars += starLayer(uv, 30.0, 0.0);
+          stars += starLayer(uv, 60.0, 100.0);
+          stars += starLayer(uv, 120.0, 200.0);
+          vec3 starColor = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.8), hash21(uv * 17.0));
+          vec3 col = vec3(0.005, 0.005, 0.015) + starColor * stars;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      side: THREE.BackSide
+    });
+    const skyboxSphere = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
+    skyboxSphere.visible = false;
+    scene.add(skyboxSphere);
+
+    // --- Earth sphere below the museum (procedural shader) ---
+    const earthMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0.0 },
+        uSunDir: { value: new THREE.Vector3(0.5, 0.3, -0.8).normalize() }
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying vec3 vWorldNormal;
+        void main() {
+          vUv = uv;
+          vNormal = normal;
+          vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform float uTime;
+        uniform vec3 uSunDir;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying vec3 vWorldNormal;
+
+        // Simple hash
+        float hash(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        // Value noise
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        float fbm(vec2 p) {
+          float v = 0.0, a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 5; i++) {
+            v += a * noise(p);
+            p = rot * p * 2.0;
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        void main() {
+          // Spherical coords from UV
+          float lon = vUv.x * 6.2832; // 0 to 2PI
+          float lat = vUv.y * 3.1416; // 0 to PI (north to south)
+          float sinLat = sin(lat);
+
+          // 3D point on unit sphere for noise sampling (avoids seam artifacts)
+          vec3 sp = vec3(sin(lat) * cos(lon), cos(lat), sin(lat) * sin(lon));
+
+          // Continent noise using 3D→2D projected noise at multiple scales
+          vec2 np = sp.xz * 2.0 + sp.y * 0.5;
+          float continent = fbm(np * 1.5 + vec2(3.7, 1.2));
+          continent += fbm(np * 3.0 + vec2(-1.5, 4.2)) * 0.4;
+          continent -= 0.55; // sea level threshold
+
+          // Polar ice
+          float polarDist = min(lat, 3.1416 - lat);
+          float ice = smoothstep(0.3, 0.1, polarDist);
+
+          // Base ocean color — vivid deep blue with depth variation
+          float oceanDepth = fbm(np * 4.0 + vec2(7.0, 2.0)) * 0.3;
+          vec3 ocean = mix(
+            vec3(0.01, 0.15, 0.45),  // deep ocean
+            vec3(0.05, 0.30, 0.65),  // shallow ocean
+            oceanDepth
+          );
+
+          // Land colors based on latitude (biomes)
+          float landHeight = smoothstep(0.0, 0.35, continent);
+          float tropical = pow(sinLat, 1.5);
+          vec3 tropicalGreen = vec3(0.08, 0.42, 0.06);
+          vec3 temperateGreen = vec3(0.18, 0.38, 0.10);
+          vec3 desert = vec3(0.55, 0.45, 0.25);
+          vec3 mountain = vec3(0.42, 0.38, 0.32);
+
+          vec3 land = mix(desert, temperateGreen, smoothstep(0.2, 0.5, tropical));
+          land = mix(land, tropicalGreen, smoothstep(0.6, 0.9, tropical));
+          land = mix(land, mountain, smoothstep(0.6, 0.9, landHeight));
+
+          // Detail variation on land
+          float detail = fbm(np * 12.0 + vec2(5.0, 8.0));
+          land *= 0.8 + 0.4 * detail;
+
+          // Choose ocean or land
+          float isLand = smoothstep(-0.02, 0.04, continent);
+          vec3 surface = mix(ocean, land, isLand);
+
+          // Ice caps override
+          vec3 iceColor = vec3(0.85, 0.9, 0.95);
+          surface = mix(surface, iceColor, ice);
+
+          // Cloud layer
+          vec2 cloudUV = np * 3.0 + vec2(uTime * 0.01, 0.0);
+          float clouds = fbm(cloudUV);
+          clouds = smoothstep(0.45, 0.7, clouds);
+          surface = mix(surface, vec3(0.95, 0.95, 0.97), clouds * 0.7);
+
+          // Simple sun lighting for depth
+          float sunLight = max(0.0, dot(vWorldNormal, uSunDir));
+          float ambient = 0.3;
+          surface *= ambient + (1.0 - ambient) * sunLight;
+
+          // Slight atmospheric scattering at edges
+          float edgeFade = pow(1.0 - abs(dot(vNormal, vec3(0.0, 1.0, 0.0))), 1.5);
+          surface = mix(surface, vec3(0.3, 0.5, 0.8), edgeFade * 0.15);
+
+          gl_FragColor = vec4(surface, 1.0);
+        }
+      `
+    });
+    const earthMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(500, 64, 48),
+      earthMaterial
+    );
+    earthMesh.position.set(0, -505, 0);
+    earthMesh.visible = false;
+    scene.add(earthMesh);
+
+    // Atmospheric rim glow — larger sphere with bright blue edge
+    const atmosphereMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(510, 64, 48),
+      new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: /* glsl */ `
+          varying vec3 vNormal;
+          varying vec3 vViewDir;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+            vViewDir = normalize(-mvPos.xyz);
+            gl_Position = projectionMatrix * mvPos;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vNormal;
+          varying vec3 vViewDir;
+          void main() {
+            float rim = 1.0 - max(0.0, dot(vNormal, vViewDir));
+            rim = pow(rim, 2.5);
+            vec3 col = vec3(0.3, 0.55, 1.0) * rim * 2.0;
+            gl_FragColor = vec4(col, rim * 0.8);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.FrontSide,
+        depthWrite: false
+      })
+    );
+    atmosphereMesh.position.copy(earthMesh.position);
+    atmosphereMesh.visible = false;
+    scene.add(atmosphereMesh);
+
     // --- Procedural wall texture: vertical panels with baseboard ---
     const wallTexW = 512, wallTexH = 256;
     const wallCanvas = document.createElement('canvas');
@@ -1424,6 +1650,7 @@ const WanderingMuseum = ({ onComplete }) => {
 
     // --- Portal Room System ---
     let currentRoomId = null;
+    let portalCooldown = 0; // frames to skip portal checks after teleport
     const visitedPortals = new Set();
 
     const portalRooms = [
@@ -3098,10 +3325,14 @@ const WanderingMuseum = ({ onComplete }) => {
     let starfieldReveal = 0;
     let starfieldTimer = null;
 
+    // Glass transition state (walls/floor become transparent on music drop)
+    let glassTransitionActive = false;
+    let glassTransitionProgress = 0; // 0 → 1 over ~1.5s
+
     const startAmbientLoop = () => {
       if (ambientPlaying) return;
       ambientPlaying = true;
-      starfieldTimer = setTimeout(() => { starfieldActive = true; }, 16000);
+      starfieldTimer = setTimeout(() => { starfieldActive = true; glassTransitionActive = true; }, 16000);
       const h = am.play('museum1', { volume: AMBIENT_VOLUME });
       if (h) ambientHandles.push(h);
       scheduleAmbientLoop();
@@ -3473,8 +3704,9 @@ const WanderingMuseum = ({ onComplete }) => {
         camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
       }
 
-      // Portal teleport check
-      if (!trippingRef.current) {
+      // Portal teleport check (with cooldown to prevent instant bounce-back)
+      if (portalCooldown > 0) portalCooldown--;
+      if (!trippingRef.current && portalCooldown === 0) {
         for (const portal of portalObjects) {
           const px = camera.position.x - portal.triggerX;
           const pz = camera.position.z - portal.triggerZ;
@@ -3486,11 +3718,12 @@ const WanderingMuseum = ({ onComplete }) => {
             // Special case: returning from entry room to main museum
             if (portal.isEntrance && portal.roomId === 'entry') {
               currentRoomId = null;
-              camera.position.set(0, 2, -19);
+              camera.position.set(0, 2, -17);
               yaw = Math.PI; // face south
               camera.rotation.y = yaw;
               // Mark visited
               visitedPortals.add('entrance');
+              portalCooldown = 30; // ~0.5s at 60fps
               break;
             }
 
@@ -3510,6 +3743,7 @@ const WanderingMuseum = ({ onComplete }) => {
             camera.rotation.y = yaw;
 
             currentRoomId = destRoomId;
+            portalCooldown = 30; // ~0.5s at 60fps
 
             // Mark portal visited (both directions turn red)
             visitedPortals.add(portal.portalId);
@@ -3709,6 +3943,11 @@ const WanderingMuseum = ({ onComplete }) => {
         outerWalls.forEach(wall => wall.visible = false);
         ceiling.visible = false;
 
+        // Hide space environment during trip mode
+        skyboxSphere.visible = false;
+        earthMesh.visible = false;
+        atmosphereMesh.visible = false;
+
         // Hide interior walls completely (they block the circles)
         interiorWall1.visible = false;
         interiorWall2.visible = false;
@@ -3904,12 +4143,23 @@ const WanderingMuseum = ({ onComplete }) => {
         // Show interior walls
         interiorWall1.visible = true;
         interiorWall2.visible = true;
-        portalRoomMeshes.forEach(m => m.visible = true);
-        portalRoomLights.forEach(l => l.visible = true);
+        // Only show portal rooms if glass transition hasn't made walls transparent
+        // (they'd be visible through transparent walls and create visual clutter)
+        if (!glassTransitionActive || currentRoomId) {
+          portalRoomMeshes.forEach(m => m.visible = true);
+          portalRoomLights.forEach(l => l.visible = true);
+        }
         entrancePortalSurface.visible = true;
 
         // Show floor
         floor.visible = true;
+
+        // Restore space environment if glass transition occurred
+        if (glassTransitionActive) {
+          skyboxSphere.visible = true;
+          earthMesh.visible = true;
+          atmosphereMesh.visible = true;
+        }
         
         // Show all art pieces
         artPieces.forEach(piece => {
@@ -4073,6 +4323,54 @@ const WanderingMuseum = ({ onComplete }) => {
         ceilingMaterial.uniforms.uReveal.value = starfieldReveal;
         ceilingMaterial.uniforms.uTime.value += vizDelta;
         ceilingMaterial.uniforms.uCamPos.value.copy(activeCamera.position);
+      }
+
+      // Glass transition: walls/floor fade to transparent, reveal space + Earth
+      if (glassTransitionActive && glassTransitionProgress < 1) {
+        if (glassTransitionProgress === 0) {
+          // First frame setup: strip textures so walls become pure transparent panes
+          wallMaterial.map = null;
+          wallMaterial.color.set(0x8899bb); // subtle blue-gray glass tint
+          wallMaterial.transparent = true;
+          wallMaterial.depthWrite = false;
+          wallMaterial.side = THREE.FrontSide;
+          wallMaterial.roughness = 0.1;
+          wallMaterial.metalness = 0.3;
+          wallMaterial.needsUpdate = true;
+          floorMaterial.map = null;
+          floorMaterial.color.set(0x6688aa); // subtle blue glass tint
+          floorMaterial.transparent = true;
+          floorMaterial.depthWrite = false;
+          floorMaterial.roughness = 0.05;
+          floorMaterial.metalness = 0.2;
+          floorMaterial.needsUpdate = true;
+          // Disable fog so distant Earth/skybox aren't fogged out
+          scene.fog = null;
+          scene.background = null;
+          // Hide portal room geometry (visible through transparent walls otherwise)
+          if (!currentRoomId) {
+            portalRoomMeshes.forEach(m => m.visible = false);
+            portalRoomLights.forEach(l => l.visible = false);
+          }
+          // Show space environment
+          skyboxSphere.visible = true;
+          earthMesh.visible = true;
+          atmosphereMesh.visible = true;
+        }
+        glassTransitionProgress = Math.min(1, glassTransitionProgress + vizDelta / 1.5);
+        wallMaterial.opacity = 1.0 - glassTransitionProgress * 0.88;  // 1.0 → 0.12
+        floorMaterial.opacity = 1.0 - glassTransitionProgress * 0.92; // 1.0 → 0.08
+      }
+
+      // Update skybox time
+      if (skyboxSphere.visible) {
+        skyboxMaterial.uniforms.uTime.value += vizDelta;
+      }
+
+      // Rotate Earth and update shader
+      if (earthMesh.visible) {
+        earthMesh.rotation.y += vizDelta * 0.02;
+        earthMaterial.uniforms.uTime.value += vizDelta;
       }
 
       // Update trip effect
